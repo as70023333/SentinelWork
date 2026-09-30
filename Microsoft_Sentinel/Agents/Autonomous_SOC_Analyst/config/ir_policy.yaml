@@ -1,0 +1,172 @@
+# =============================================================================
+#  Incident Response Policy for the Autonomous SOC Analyst
+# -----------------------------------------------------------------------------
+#  This file IS your IR policy in machine-readable form. The agents never take
+#  an action this file does not allow. Edit it, restart the service, done.
+#
+#  Autonomy modes for each action:
+#    autonomous  - the agent executes it immediately
+#    approval    - the agent queues it; a human clicks Approve on the dashboard
+#    recommend   - the agent only recommends it in the report
+#    disabled    - never proposed
+#
+#  Recommended rollout: start with every action on "recommend", watch the
+#  verdicts for a week or two, then move proven alert classes to "autonomous".
+# =============================================================================
+version: 1
+
+autonomy:
+  enabled: true              # global kill switch: false = every action becomes "recommend"
+  actions:
+    isolate_host: autonomous
+    av_scan: autonomous
+    block_ip: autonomous
+    block_hash: autonomous
+    block_domain: autonomous
+    block_url: autonomous
+    disable_user: autonomous
+    revoke_sessions: autonomous
+
+# ---------------------------------------------------------------- verdict math
+thresholds:
+  true_positive_score: 60        # evidence score >= this (and at least one corroborating signal) -> true positive
+  false_positive_score: 25       # evidence score <= this AND exculpatory evidence -> false positive
+  min_confidence_to_contain: 0.70
+  indicator_malicious_score: 70  # per-indicator reputation score considered malicious
+  indicator_suspicious_score: 30
+
+scoring:
+  provider_severity_points: {critical: 20, high: 15, medium: 10, low: 5, informational: 0}
+  threat_intel_weight: 0.6       # share of the worst indicator score that counts toward the total
+  behavior_cap: 40               # max points from endpoint behavior signals
+  identity_cap: 30               # max points from user/sign-in signals
+  lateral_spread_points: 15      # indicator seen on other hosts
+
+# Severity measures IMPACT, the evidence score measures CONFIDENCE that it is malicious.
+# A confirmed brute force that never succeeded is a medium; confirmed ransomware is critical.
+severity_by_class:
+  ransomware: critical
+  credential_access: high
+  identity_compromise: high
+  phishing: high
+  lateral_movement: high
+  command_and_control: high
+  exfiltration: high
+  malware: medium
+  brute_force: medium
+  suspicious_activity: low
+
+critical_when:                  # escalators applied to confirmed (true positive) incidents
+  lateral_spread: true          # the threat is on more than one host
+  privileged_identity: true     # a tier-0 / admin identity is involved
+  protected_asset_bumps_one_level: true   # e.g. a high on a domain controller becomes critical
+
+benign_evidence:
+  # Publisher names (file version info) of your own internal tooling. Do NOT add
+  # "Microsoft Corporation": attackers live off Microsoft-signed binaries (LOLBins).
+  trusted_signers: ["Contoso IT"]
+  common_software_min_devices: 25   # a hash on this many devices is deployed software, not an outbreak
+
+# ---------------------------------------------------------------- alert classes
+# First match wins. Keywords are matched (case-insensitive) against the incident
+# title, description, MITRE tactics and the malware family returned by threat intel.
+classification:
+  - class: ransomware
+    keywords: [ransom, lockbit, blackcat, alphv, akira, conti, "shadow cop", vssadmin, "mass file encryption"]
+  - class: credential_access
+    keywords: [mimikatz, lsass, "credential dump", "credential theft", dcsync, "ntds.dit", sekurlsa]
+  - class: phishing
+    keywords: [phish, "malicious url click", "malicious email", "user clicked"]
+  - class: identity_compromise
+    keywords: ["impossible travel", "mfa fatigue", "unfamiliar sign-in", "suspicious sign-in", "token theft", "atypical travel", "anonymous ip"]
+  - class: brute_force
+    keywords: ["brute force", "password spray", "multiple failed", "failed sign-in"]
+  - class: lateral_movement
+    keywords: [lateral, psexec, "remote service", "lateralmovement"]
+  - class: command_and_control
+    keywords: [beacon, "command and control", "c2 ", cobalt, "commandandcontrol"]
+  - class: exfiltration
+    keywords: [exfil, "mass download", "data transfer", "exfiltration"]
+  - class: malware
+    keywords: [malware, trojan, backdoor, "malicious file", virus, worm, "execution"]
+
+# ---------------------------------------------------------------- containment
+# Which alert classes each containment action is allowed for. "all" = any class.
+# Actions are only proposed for TRUE POSITIVES above min_confidence_to_contain.
+containment:
+  isolate_host: [ransomware, malware, credential_access, lateral_movement, command_and_control]
+  av_scan: [ransomware, malware, credential_access, lateral_movement, command_and_control]
+  block_hash: all
+  block_ip: all
+  block_domain: all
+  block_url: all
+  disable_user: [identity_compromise, phishing, credential_access]
+  revoke_sessions: [identity_compromise, phishing, credential_access]
+  related_hosts: approval        # hosts found via lateral-spread hunting: autonomous | approval | recommend
+
+# ---------------------------------------------------------------- guardrails
+guardrails:
+  protected_hosts:               # glob patterns, matched against hostname and FQDN
+    - "dc*"
+    - "*-dc-*"
+    - "*sql-prd*"
+    - "exch*"
+    - "adfs*"
+    - "pki*"
+  protected_host_action: deny    # deny | approval | recommend
+  tier0_accounts:                # glob patterns, matched against UPN
+    - "administrator@*"
+    - "admin-*@*"
+    - "breakglass*@*"
+    - "svc-backup@*"
+    - "krbtgt*"
+  tier0_account_action: approval
+  privileged_role_action: approval   # users holding Entra admin roles (live mode looks these up)
+  internal_networks:             # never blocked at the firewall
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 127.0.0.0/8
+    - 169.254.0.0/16
+    - 100.64.0.0/10
+    - "::1/128"
+    - "fc00::/7"
+    - "fe80::/10"
+  allowlist:
+    ips: []
+    domains: [microsoft.com, windowsupdate.com, office.com, office365.com, azure.com, windows.net, google.com]
+    hashes: []
+  rate_limits_per_hour:          # blast-radius control: max autonomous executions per hour
+    isolate_host: 5
+    av_scan: 20
+    disable_user: 5
+    revoke_sessions: 10
+    block_ip: 50
+    block_hash: 50
+    block_domain: 30
+    block_url: 30
+  block_expiry_hours: 72         # firewall/indicator blocks expire automatically
+
+# ---------------------------------------------------------------- escalation
+# Decides whether a human is paged now or the incident goes to the work queue.
+# Rules are evaluated top to bottom; the first rule whose conditions ALL match wins.
+# Available conditions:
+#   severity: [..]            verdict: [..]            alert_class: [..]
+#   protected_asset: true      (a guardrail blocked or gated an action)
+#   containment_incomplete: true (a proposed action is pending, recommended-only, denied or failed)
+escalation:
+  - name: Critical severity always pages
+    when: {severity: [critical]}
+    disposition: page
+  - name: Protected asset or privileged identity involved
+    when: {verdict: [true_positive, undetermined], protected_asset: true}
+    disposition: page
+  - name: Confirmed high-severity threat that is not fully contained
+    when: {verdict: [true_positive], severity: [high], containment_incomplete: true}
+    disposition: page
+  - name: False or benign positive
+    when: {verdict: [false_positive, benign_positive]}
+    disposition: auto_close
+  - name: Contained or lower impact - work queue
+    when: {}
+    disposition: queue

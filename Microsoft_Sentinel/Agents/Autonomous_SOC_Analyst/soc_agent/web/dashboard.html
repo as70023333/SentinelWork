@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autonomous SOC Analyst</title>
+<style>
+:root {
+  --bg: #0a0e13; --panel: #11171f; --panel-2: #161e28; --line: #223040; --text: #dbe3ec; --muted: #8b99aa;
+  --accent: #4cc2ff; --accent-2: #2a7fb0;
+  --critical: #ff4d6d; --high: #ff8c42; --medium: #f2c14e; --low: #45c486; --info: #8b99aa;
+  --ok: #45c486; --warn: #f2c14e; --bad: #ff4d6d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
+button { font: inherit; cursor: pointer; }
+header {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 18px;
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #0f151d, var(--bg));
+  position: sticky; top: 0; z-index: 5;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; font-size: 16px; }
+.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+.chip.strong { color: var(--text); }
+.spacer { flex: 1; }
+input.key { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 5px 8px; width: 170px; }
+.btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 5px 10px; }
+.btn:hover { border-color: var(--accent-2); }
+.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+.btn.ok { border-color: #2c7a55; color: #9ff0c7; } .btn.bad { border-color: #8a2c3d; color: #ffb3c1; }
+.btn:disabled { opacity: .45; cursor: default; }
+main { display: grid; grid-template-columns: 300px 340px minmax(0, 1fr); gap: 14px; padding: 14px 18px 40px; }
+@media (max-width: 1250px) { main { grid-template-columns: 280px minmax(0, 1fr); } #detailCol { grid-column: 1 / -1; } }
+@media (max-width: 760px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 40px; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 14px; min-width: 0; }
+.panel h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.scenario { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; background: var(--panel-2); }
+.scenario .t { font-weight: 600; margin-bottom: 4px; }
+.scenario .s { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: help; }
+.scenario .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.inc { display: grid; grid-template-columns: 4px 1fr; gap: 10px; padding: 9px 10px 9px 0; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+.inc:hover { background: var(--panel-2); }
+.inc.sel { background: var(--panel-2); border-color: var(--accent-2); }
+.inc .bar { border-radius: 4px; }
+.inc .title { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+.inc .meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.sev-critical { background: var(--critical); } .sev-high { background: var(--high); } .sev-medium { background: var(--medium); }
+.sev-low { background: var(--low); } .sev-informational { background: var(--info); }
+.c-critical { color: var(--critical); border-color: #5a2230; } .c-high { color: var(--high); border-color: #5a3a22; }
+.c-medium { color: var(--medium); border-color: #55482a; } .c-low { color: var(--low); border-color: #235040; }
+.c-page { color: #fff; background: #8a2c3d; border-color: #8a2c3d; } .c-queue { color: #cfe3ff; border-color: #2a4a6b; }
+.c-auto_close { color: #9ff0c7; border-color: #235040; }
+.c-contained { color: #9ff0c7; border-color: #235040; } .c-investigating { color: var(--warn); border-color: #55482a; }
+.c-closed { color: var(--muted); } .c-remediated { color: #9ff0c7; border-color: #235040; }
+.empty { color: var(--muted); padding: 18px 6px; text-align: center; }
+.detail-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.detail-title { font-size: 19px; font-weight: 700; margin: 2px 0 8px; }
+.summary { background: var(--panel-2); border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: 6px; margin: 10px 0 12px; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 10px 0 4px; }
+@media (max-width: 560px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.metric { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.metric .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.metric .l { color: var(--muted); font-size: 12px; }
+.gantt { display: grid; gap: 6px; }
+.g-row { display: grid; grid-template-columns: 210px minmax(0, 1fr) 64px; gap: 8px; align-items: center; font-size: 12.5px; }
+@media (max-width: 560px) { .g-row { grid-template-columns: 120px minmax(0, 1fr) 54px; } }
+.g-track { height: 12px; background: #0d131a; border-radius: 4px; position: relative; overflow: hidden; }
+.g-bar { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--accent-2); min-width: 3px; }
+.g-bar.err { background: var(--bad); }
+.g-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-ms { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; }
+.actions td, .actions th { border-bottom: 1px solid var(--line); padding: 7px 6px; text-align: left; vertical-align: top; font-size: 13px; }
+.actions th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.mono { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.st { font-weight: 600; } .st-executed { color: var(--ok); } .st-pending_approval { color: var(--warn); }
+.st-denied_by_policy, .st-failed { color: var(--bad); } .st-rolled_back, .st-rejected, .st-recommended { color: var(--muted); }
+.note { color: var(--muted); font-size: 12px; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0 10px; flex-wrap: wrap; }
+.tab { background: none; border: none; color: var(--muted); padding: 7px 10px; border-bottom: 2px solid transparent; }
+.tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.report { overflow-x: auto; }
+.report h1 { font-size: 18px; } .report h2 { font-size: 15px; margin-top: 20px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.report h3 { font-size: 13.5px; color: var(--muted); }
+.report table { font-size: 12.5px; margin: 6px 0; } .report td, .report th { border: 1px solid var(--line); padding: 5px 7px; vertical-align: top; }
+.report code { font-family: var(--mono); font-size: 12px; background: #0d131a; padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+.report pre { background: #0d131a; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; }
+.report pre code { background: none; padding: 0; word-break: normal; white-space: pre; }
+.tl { font-size: 12.5px; } .tl div { padding: 4px 0; border-bottom: 1px dashed #1b2633; }
+.tl .ts { color: var(--muted); font-family: var(--mono); font-size: 11.5px; margin-right: 8px; }
+.tl .who { color: var(--accent); margin-right: 6px; }
+.feed-item { padding: 8px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 8px; background: var(--panel-2); cursor: pointer; }
+.feed-item.page { border-color: #8a2c3d; box-shadow: 0 0 0 1px #8a2c3d inset; }
+.feed-item .h { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.feed-item .b { font-size: 12.5px; margin-top: 4px; }
+.feed-item .clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.env-list { font-size: 12.5px; margin: 0; padding-left: 18px; }
+.env-list li { margin: 3px 0; }
+.muted { color: var(--muted); }
+.flash { animation: flash 1.2s ease-out 1; } @keyframes flash { from { background: #1d3a52; } to { background: transparent; } }
+.toast { position: fixed; bottom: 18px; right: 18px; background: #3a1b24; border: 1px solid #8a2c3d; color: #ffd0da; padding: 10px 14px; border-radius: 8px; max-width: 420px; display: none; z-index: 10; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>Autonomous SOC Analyst</div>
+  <span id="mode" class="chip strong">...</span>
+  <span id="llm" class="chip"></span>
+  <span id="feeds" class="chip"></span>
+  <span class="spacer"></span>
+  <input id="key" class="key" type="password" placeholder="API key (for actions)" autocomplete="off" style="display:none">
+  <input id="who" class="key" placeholder="Your name" value="analyst" style="width:120px">
+  <button id="reset" class="btn" style="display:none">Reset demo</button>
+</header>
+<main>
+  <section id="leftCol">
+    <div class="panel" id="scenPanel" style="display:none">
+      <h2>Fire a demo alert</h2>
+      <div id="scenarios"></div>
+    </div>
+    <div class="panel" id="envPanel" style="display:none">
+      <h2>Simulated environment</h2>
+      <div id="env"></div>
+    </div>
+  </section>
+  <section>
+    <div class="panel">
+      <h2>On-call feed (what reaches your phone)</h2>
+      <div id="feed"><div class="empty">Nothing yet. Quiet night.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Incident queue</h2>
+      <div id="incidents"><div class="empty">No incidents yet.</div></div>
+    </div>
+  </section>
+  <section id="detailCol">
+    <div class="panel" id="detail"><div class="empty">Select an incident, or fire a demo alert on the left.</div></div>
+  </section>
+</main>
+<div id="toast" class="toast"></div>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const S = { info: null, selected: null, incidents: [], tab: "report", lastFeed: null };
+  try { $("key").value = sessionStorage.getItem("socKey") || ""; $("who").value = sessionStorage.getItem("socWho") || "analyst"; } catch (e) {}
+  $("key").addEventListener("change", () => { try { sessionStorage.setItem("socKey", $("key").value); } catch (e) {} });
+  $("who").addEventListener("change", () => { try { sessionStorage.setItem("socWho", $("who").value); } catch (e) {} });
+
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else if (k === "style") el.setAttribute("style", v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      el.appendChild(typeof kid === "string" || typeof kid === "number" ? document.createTextNode(String(kid)) : kid);
+    }
+    return el;
+  }
+  const label = (s) => String(s || "").replace(/_/g, " ");
+  const pct = (x) => Math.round((x || 0) * 100) + "%";
+  const fmtS = (x) => (x === null || x === undefined) ? "-" : (x < 10 ? x.toFixed(1) : Math.round(x)) + "s";
+  const time = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"}); };
+
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 5000); }
+
+  async function api(path, opts = {}) {
+    const headers = { "Content-Type": "application/json" };
+    const key = $("key").value.trim(); if (key) headers["X-SOC-Key"] = key;
+    const who = $("who").value.trim(); if (who) headers["X-SOC-User"] = who;
+    const res = await fetch(path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+    let data = null; try { data = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error((data && data.error) || ("HTTP " + res.status));
+    return data;
+  }
+
+  // ------------------------------------------------------------------ header / scenarios
+  async function loadInfo() {
+    const info = S.info = await api("/api/info");
+    $("mode").textContent = info.mode === "live" ? "LIVE - Microsoft Sentinel" : "DEMO - simulated tenant";
+    $("mode").style.color = info.mode === "live" ? "var(--bad)" : "var(--accent)";
+    $("llm").textContent = "Report writer: " + (String(info.llm).startsWith("template") ? "template" : info.llm);
+    $("feeds").textContent = info.threat_intel.length + " threat-intel feeds | budget " + info.fast_path_budget_seconds + "s";
+    $("key").style.display = info.write_key_required ? "" : "none";
+    if (info.mode !== "live") {
+      $("scenPanel").style.display = ""; $("envPanel").style.display = ""; $("reset").style.display = "";
+      const box = $("scenarios"); box.replaceChildren();
+      for (const sc of info.scenarios) {
+        const btn = h("button", { class: "btn primary", onclick: async (ev) => {
+          ev.target.disabled = true;
+          try { const r = await api("/api/demo/run/" + encodeURIComponent(sc.id), { method: "POST" }); select(r.incident_id); }
+          catch (e) { toast(e.message); } finally { setTimeout(() => ev.target.disabled = false, 1500); }
+        } }, "Fire alert");
+        const exp = sc.expected || {};
+        box.appendChild(h("div", { class: "scenario" },
+          h("div", { class: "t" }, sc.name), h("div", { class: "s", title: sc.story }, sc.story),
+          h("div", { class: "row" }, h("span", { class: "chip c-" + (exp.disposition || "") }, "expect: " + label(exp.disposition || "?")), btn)));
+      }
+    }
+  }
+  $("reset").addEventListener("click", async () => {
+    if (!confirm("Clear all demo incidents and the simulated environment?")) return;
+    try { await api("/api/demo/reset", { method: "POST" }); S.selected = null; location.hash = ""; refresh(); renderDetail(null); }
+    catch (e) { toast(e.message); }
+  });
+
+  // ------------------------------------------------------------------ incident list
+  function renderList() {
+    const box = $("incidents");
+    if (!S.incidents.length) { box.replaceChildren(h("div", { class: "empty" }, "No incidents yet.")); return; }
+    box.replaceChildren(...S.incidents.map((i) => h("div", {
+        class: "inc" + (i.id === S.selected ? " sel" : ""), onclick: () => select(i.id) },
+      h("div", { class: "bar sev-" + i.severity }),
+      h("div", {},
+        h("div", { class: "title" }, i.title),
+        h("div", { class: "meta" },
+          h("span", { class: "chip c-" + i.severity }, i.verdict === "pending" ? "triaging" : i.severity),
+          h("span", { class: "chip c-" + i.status }, label(i.status)),
+          i.disposition !== "pending" ? h("span", { class: "chip c-" + i.disposition }, label(i.disposition)) : null,
+          i.time_to_contain_seconds != null ? h("span", { class: "chip" }, "contained " + fmtS(i.time_to_contain_seconds)) : null,
+          i.pending_approvals ? h("span", { class: "chip c-medium" }, i.pending_approvals + " awaiting you") : null,
+          h("span", { class: "chip" }, time(i.created)))))));
+  }
+
+  function select(id) { S.selected = id; S.sig = null; location.hash = "#/incident/" + id; renderList(); loadDetail(true); }
+
+  // ------------------------------------------------------------------ detail
+  async function loadDetail(force) {
+    if (!S.selected) return;
+    try {
+      const inc = await api("/api/incidents/" + encodeURIComponent(S.selected));
+      // only re-render when something changed, so reading/selecting text is not disturbed
+      const sig = JSON.stringify([inc.id, inc.report_version, inc.status, inc.verdict, inc.disposition,
+        inc.actions.map((a) => a.status + a.result), inc.agent_runs.length, inc.timeline.length]);
+      if (force || sig !== S.sig) { S.sig = sig; renderDetail(inc); }
+    } catch (e) { S.sig = null; renderDetail(null); }
+  }
+
+  function gantt(inc) {
+    const start = new Date(inc.started_at || inc.created).getTime();
+    const runs = inc.agent_runs || [];
+    if (!runs.length) return h("div", { class: "muted" }, "Agents are starting...");
+    const total = Math.max(1000, ...runs.map((r) => (new Date(r.started).getTime() - start) + r.duration_ms));
+    return h("div", { class: "gantt" }, runs.map((r) => {
+      const off = Math.max(0, new Date(r.started).getTime() - start);
+      const bar = h("div", { class: "g-bar" + (r.ok ? "" : " err"),
+        style: `left:${(off / total * 100).toFixed(2)}%;width:${Math.max(0.6, r.duration_ms / total * 100).toFixed(2)}%` });
+      return h("div", { class: "g-row", title: r.ok ? r.summary : r.error },
+        h("div", { class: "g-name" }, r.agent), h("div", { class: "g-track" }, bar),
+        h("div", { class: "g-ms" }, r.duration_ms >= 1000 ? (r.duration_ms / 1000).toFixed(1) + "s" : r.duration_ms + "ms"));
+    }));
+  }
+
+  function actionButtons(inc, a) {
+    const act = async (decision, ev) => {
+      if (decision === "rollback" && !confirm(`Roll back ${label(a.type)} on ${a.target}?`)) return;
+      if (a.status === "denied_by_policy" && decision === "approve" &&
+          !confirm(`Guardrail override: ${a.policy_note}\n\nExecute ${label(a.type)} on ${a.target} anyway?`)) return;
+      ev.target.disabled = true;
+      try { await api(`/api/incidents/${encodeURIComponent(inc.id)}/actions/${encodeURIComponent(a.id)}/${decision}`, { method: "POST", body: JSON.stringify({}) }); await loadDetail(); refresh(); }
+      catch (e) { toast(e.message); ev.target.disabled = false; }
+    };
+    const b = [];
+    if (["pending_approval", "recommended", "failed"].includes(a.status)) b.push(h("button", { class: "btn ok", onclick: (e) => act("approve", e) }, a.status === "failed" ? "Retry" : "Approve"));
+    if (a.status === "denied_by_policy") b.push(h("button", { class: "btn bad", onclick: (e) => act("approve", e) }, "Override"));
+    if (["pending_approval", "recommended"].includes(a.status)) b.push(h("button", { class: "btn", onclick: (e) => act("reject", e) }, "Reject"));
+    if (a.status === "executed" && !["av_scan", "revoke_sessions"].includes(a.type)) b.push(h("button", { class: "btn", onclick: (e) => act("rollback", e) }, "Roll back"));
+    return h("div", { class: "btns" }, b);
+  }
+
+  function statusButtons(inc) {
+    const set = async (status, verdict) => {
+      const note = prompt(`Note for setting status to ${status}:`, "") ; if (note === null) return;
+      try { await api(`/api/incidents/${encodeURIComponent(inc.id)}/status`, { method: "POST", body: JSON.stringify({ status, verdict, note }) }); loadDetail(); refresh(); }
+      catch (e) { toast(e.message); }
+    };
+    return h("div", { class: "btns" },
+      inc.status !== "remediated" && inc.status !== "closed" ? h("button", { class: "btn ok", onclick: () => set("remediated") }, "Mark remediated") : null,
+      inc.status !== "closed" ? h("button", { class: "btn", onclick: () => set("closed") }, "Close") : null,
+      inc.status !== "closed" && inc.verdict !== "false_positive" ? h("button", { class: "btn", onclick: () => set("closed", "false_positive") }, "Close as false positive") : null,
+      inc.status === "closed" ? h("button", { class: "btn", onclick: () => set("investigating") }, "Reopen") : null);
+  }
+
+  function renderDetail(inc) {
+    const box = $("detail");
+    if (!inc) { box.replaceChildren(h("div", { class: "empty" }, "Select an incident, or fire a demo alert on the left.")); return; }
+    const executed = inc.actions.filter((a) => a.status === "executed").length;
+    const pending = inc.actions.filter((a) => a.status === "pending_approval").length;
+    const triaging = inc.verdict === "pending";
+    const head = h("div", {},
+      h("div", { class: "detail-head" },
+        h("span", { class: "chip c-" + inc.severity }, triaging ? "triaging..." : inc.severity.toUpperCase()),
+        h("span", { class: "chip c-" + inc.status }, label(inc.status)),
+        h("span", { class: "chip strong" }, label(inc.verdict) + (triaging ? "" : " " + pct(inc.assessment.confidence))),
+        h("span", { class: "chip" }, label(inc.alert_class)),
+        inc.disposition !== "pending" ? h("span", { class: "chip c-" + inc.disposition }, label(inc.disposition).toUpperCase()) : null,
+        h("span", { class: "chip mono" }, inc.external_id || inc.id)),
+      h("div", { class: "detail-title" }, inc.title),
+      inc.executive_summary ? h("div", { class: "summary" }, inc.executive_summary) : null,
+      h("div", { class: "metrics" },
+        h("div", { class: "metric" }, h("div", { class: "v" }, fmtS(inc.time_to_contain_seconds)), h("div", { class: "l" }, "time to contain")),
+        h("div", { class: "metric" }, h("div", { class: "v" }, fmtS(inc.fast_path_seconds)), h("div", { class: "l" }, "alert to report delivered")),
+        h("div", { class: "metric" }, h("div", { class: "v" }, triaging ? "-" : inc.assessment.score + "/100"), h("div", { class: "l" }, "evidence score")),
+        h("div", { class: "metric" }, h("div", { class: "v", style: pending ? "color:var(--warn)" : "" }, executed + " / " + pending), h("div", { class: "l" }, "actions done / awaiting you"))));
+
+    const acts = h("div", {},
+      h("h2", { style: "margin-top:16px" }, "Response actions"),
+      inc.actions.length ? h("table", { class: "actions" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Action"), h("th", {}, "Target"), h("th", {}, "Status"), h("th", {}, "Why / result"), h("th", {}, ""))),
+        h("tbody", {}, inc.actions.map((a) => h("tr", {},
+          h("td", {}, label(a.type)), h("td", { class: "mono" }, a.target),
+          h("td", { class: "st st-" + a.status }, label(a.status)),
+          h("td", {}, h("div", {}, a.reason), h("div", { class: "note" }, a.result || a.policy_note)),
+          h("td", {}, actionButtons(inc, a)))))) : h("div", { class: "muted" }, triaging ? "Deciding..." : "No containment actions proposed."));
+
+    const tabs = [["report", "IR report"], ["agents", "Agent run"], ["timeline", "Timeline"]];
+    const tabBar = h("div", { class: "tabs" }, tabs.map(([k, t]) => h("button", { class: "tab" + (S.tab === k ? " on" : ""), onclick: () => { S.tab = k; renderDetail(inc); } }, t)));
+    let body;
+    if (S.tab === "report") {
+      body = h("div", { class: "report" });
+      if (inc.report_html) body.innerHTML = inc.report_html;   // sanitized server-side (escaped HTML, no links/images)
+      else body.appendChild(h("div", { class: "muted" }, "Report is being written..."));
+    } else if (S.tab === "agents") {
+      body = gantt(inc);
+    } else {
+      body = h("div", { class: "tl" }, inc.timeline.map((e) => h("div", {}, h("span", { class: "ts" }, time(e.ts)), h("span", { class: "who" }, e.actor), e.message)));
+    }
+    box.replaceChildren(head, h("div", { style: "margin-top:12px" }, statusButtons(inc)), acts, tabBar, body);
+  }
+
+  // ------------------------------------------------------------------ feed + environment
+  function renderEnv(data) {
+    const feed = data.feed || [];
+    const key = feed.length ? feed[0].ts + feed[0].incident_id + feed[0].event : "";
+    if (!feed.length) $("feed").replaceChildren(h("div", { class: "empty" }, "Nothing yet. Quiet night."));
+    else $("feed").replaceChildren(...feed.slice(0, 5).map((f, idx) => h("div", {
+        class: "feed-item" + (f.event === "page" ? " page" : "") + (idx === 0 && key !== S.lastFeed && S.lastFeed !== null ? " flash" : ""),
+        onclick: () => select(f.incident_id) },
+      h("div", { class: "h" }, h("span", {}, f.event === "page" ? "PAGE" : f.event === "update" ? "update" : "queued / FYI"), h("span", {}, time(f.ts))),
+      h("div", { class: "b" }, h("b", {}, f.title)), h("div", { class: "b muted clamp", title: f.summary || "" }, f.summary || ""))));
+    if (key !== S.lastFeed && S.lastFeed !== null && feed.length && feed[0].event === "page") toast("PAGE: " + feed[0].title);
+    S.lastFeed = key;
+    const w = data.world; if (!w) return;
+    const sec = (title, items, fmt) => [h("div", { class: "muted", style: "margin-top:8px;font-size:12px" }, title + " (" + items.length + ")"),
+      items.length ? h("ul", { class: "env-list" }, items.map((x) => h("li", { class: "mono" }, fmt(x)))) : h("div", { class: "muted", style: "font-size:12px;padding-left:4px" }, "none")];
+    $("env").replaceChildren(
+      ...sec("Isolated hosts", w.isolated_hosts, (x) => x.host),
+      ...sec("Blocked indicators", w.blocked_indicators, (x) => x.type + ": " + x.value),
+      ...sec("Disabled accounts", w.disabled_users, (x) => x.upn + " (" + x.directory + ")"),
+      ...sec("Sentinel write-backs", w.siem_writeback.slice(-5).reverse(), (x) => x.incident + ": " + x.update));
+  }
+
+  // ------------------------------------------------------------------ polling
+  async function refresh() {
+    try { S.incidents = await api("/api/incidents"); renderList(); } catch (e) {}
+    try { renderEnv(await api("/api/environment")); } catch (e) {}
+  }
+  function fromHash() { const m = location.hash.match(/#\/incident\/([\w-]+)/); if (m && m[1] !== S.selected) { S.selected = m[1]; S.sig = null; renderList(); loadDetail(true); } }
+  window.addEventListener("hashchange", fromHash);
+
+  loadInfo().catch((e) => toast("Cannot reach the SOC agent API: " + e.message));
+  refresh(); fromHash();
+  setInterval(refresh, 1500);
+  setInterval(() => { if (S.selected && document.visibilityState === "visible") loadDetail(); }, 1500);
+})();
+</script>
+</body>
+</html>

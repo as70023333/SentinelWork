@@ -1,0 +1,44 @@
+{
+  "name": "False positive: IT inventory script",
+  "story": "A detection fires on an encoded PowerShell command. The agent finds it was launched by the company's own signed inventory agent, which runs on 212 devices, and threat intel has the hash as clean. It closes the incident as a false positive with no action.",
+  "expected": {
+    "verdict": "false_positive",
+    "severity": "low",
+    "alert_class": "malware",
+    "disposition": "auto_close"
+  },
+  "incident": {
+    "title": "Suspicious PowerShell execution with encoded command",
+    "description": "A process executed PowerShell with an encoded command line, a technique frequently used by attackers.",
+    "provider_severity": "medium",
+    "product": "Microsoft Defender for Endpoint",
+    "tactics": [
+      "Execution"
+    ],
+    "techniques": [
+      "T1059.001"
+    ],
+    "entities": {
+      "hosts": [
+        {
+          "hostname": "WKS-IT-007",
+          "fqdn": "wks-it-007.contoso.com",
+          "os": "Windows 11"
+        }
+      ],
+      "accounts": [
+        {
+          "upn": "tthomas@contoso.com",
+          "display_name": "Tom Thomas"
+        }
+      ],
+      "indicators": [
+        {
+          "type": "file_hash",
+          "value": "4e9d2b7f1a6c3e8d0b5f9a2c7e4d1b6f8a3c0e5d9b2f7a4c1e6d8b3f0a5c9e2d",
+          "context": "InventoryAgent.exe"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "8f3c2a5d9b1e4f6a7c0d2e9b5a3f1c8d7e6b4a2f9c1d3e5b7a9f0c2e4d6b8a1f": [
+    {
+      "source": "VirusTotal",
+      "verdict": "malicious",
+      "score": 100,
+      "summary": "61/72 engines flag as malicious",
+      "malware_family": "LockBit"
+    },
+    {
+      "source": "MalwareBazaar",
+      "verdict": "malicious",
+      "score": 95,
+      "summary": "Known malware sample (first seen 2026-09-12)",
+      "malware_family": "LockBit"
+    },
+    {
+      "source": "AlienVault OTX",
+      "verdict": "malicious",
+      "score": 80,
+      "summary": "Referenced in 7 OTX pulses",
+      "malware_family": "LockBit"
+    }
+  ],
+  "203.0.113.66": [
+    {
+      "source": "AbuseIPDB",
+      "verdict": "malicious",
+      "score": 100,
+      "summary": "Abuse confidence 100%, 312 reports"
+    },
+    {
+      "source": "AlienVault OTX",
+      "verdict": "malicious",
+      "score": 80,
+      "summary": "Referenced in 4 OTX pulses (LockBit C2)",
+      "malware_family": "LockBit"
+    },
+    {
+      "source": "VirusTotal",
+      "verdict": "malicious",
+      "score": 75,
+      "summary": "14/94 engines flag as malicious"
+    }
+  ],
+  "https://m1crosoft-account-verify.com/owa/login.php": [
+    {
+      "source": "URLhaus",
+      "verdict": "malicious",
+      "score": 90,
+      "summary": "Listed as phishing/malware distribution (online)"
+    },
+    {
+      "source": "VirusTotal",
+      "verdict": "malicious",
+      "score": 75,
+      "summary": "9/97 engines flag as malicious"
+    }
+  ],
+  "m1crosoft-account-verify.com": [
+    {
+      "source": "URLhaus",
+      "verdict": "malicious",
+      "score": 90,
+      "summary": "Host listed with 3 malicious URLs"
+    },
+    {
+      "source": "VirusTotal",
+      "verdict": "malicious",
+      "score": 75,
+      "summary": "7/94 engines flag as malicious"
+    }
+  ],
+  "198.51.100.23": [
+    {
+      "source": "AbuseIPDB",
+      "verdict": "malicious",
+      "score": 91,
+      "summary": "Abuse confidence 91%, 58 reports"
+    },
+    {
+      "source": "GreyNoise",
+      "verdict": "malicious",
+      "score": 85,
+      "summary": "Actively scanning/attacking the internet (malicious)"
+    },
+    {
+      "source": "VirusTotal",
+      "verdict": "malicious",
+      "score": 75,
+      "summary": "6/94 engines flag as malicious"
+    }
+  ],
+  "4e9d2b7f1a6c3e8d0b5f9a2c7e4d1b6f8a3c0e5d9b2f7a4c1e6d8b3f0a5c9e2d": [
+    {
+      "source": "VirusTotal",
+      "verdict": "clean",
+      "score": 0,
+      "summary": "0/72 engines flag as malicious"
+    }
+  ],
+  "b0d5f9c3e7a1b4d8f2c6e0a9b3d7f1c5e9a2b6d0f4c8e1a5b9d3f7c0e4a8b2d6": [
+    {
+      "source": "VirusTotal",
+      "verdict": "malicious",
+      "score": 100,
+      "summary": "58/72 engines flag as malicious",
+      "malware_family": "Mimikatz"
+    },
+    {
+      "source": "MalwareBazaar",
+      "verdict": "malicious",
+      "score": 95,
+      "summary": "Known hacktool sample",
+      "malware_family": "Mimikatz"
+    }
+  ],
+  "192.0.2.77": [
+    {
+      "source": "AbuseIPDB",
+      "verdict": "malicious",
+      "score": 100,
+      "summary": "Abuse confidence 100%, 2,941 reports (RDP brute force)"
+    },
+    {
+      "source": "GreyNoise",
+      "verdict": "malicious",
+      "score": 85,
+      "summary": "Actively scanning/attacking the internet (RDP scanner)"
+    },
+    {
+      "source": "VirusTotal",
+      "verdict": "suspicious",
+      "score": 40,
+      "summary": "4/94 engines flag as malicious"
+    }
+  ]
+}

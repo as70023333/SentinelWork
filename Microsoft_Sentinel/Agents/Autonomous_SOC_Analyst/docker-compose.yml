@@ -1,0 +1,15 @@
+# docker compose up --build        -> http://localhost:8080
+# Copy .env.example to .env first (demo mode works with the defaults).
+services:
+  soc-agent:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - soc-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  soc-data:

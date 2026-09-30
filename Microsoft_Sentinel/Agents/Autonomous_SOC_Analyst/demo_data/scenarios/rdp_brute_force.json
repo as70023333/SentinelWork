@@ -1,0 +1,43 @@
+{
+  "name": "RDP brute force from a known scanner",
+  "story": "A known malicious scanner makes 46 failed sign-in attempts against the jump server. Nothing succeeded. The agent blocks the IP and puts a medium-severity ticket in the queue.",
+  "expected": {
+    "verdict": "true_positive",
+    "severity": "medium",
+    "alert_class": "brute_force",
+    "disposition": "queue"
+  },
+  "incident": {
+    "title": "Multiple failed RDP sign-ins from an external IP",
+    "description": "46 failed logons against SRV-JUMP-01 from a single public IP address within 30 minutes.",
+    "provider_severity": "medium",
+    "product": "Microsoft Sentinel analytics rule",
+    "tactics": [
+      "CredentialAccess"
+    ],
+    "techniques": [
+      "T1110.001"
+    ],
+    "entities": {
+      "hosts": [
+        {
+          "hostname": "SRV-JUMP-01",
+          "fqdn": "srv-jump-01.contoso.com",
+          "os": "Windows Server 2022"
+        }
+      ],
+      "accounts": [
+        {
+          "upn": "helpdesk01@contoso.com",
+          "display_name": "Helpdesk 01"
+        }
+      ],
+      "indicators": [
+        {
+          "type": "ip",
+          "value": "192.0.2.77"
+        }
+      ]
+    }
+  }
+}

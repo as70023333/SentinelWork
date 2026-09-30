@@ -1,6 +1,6 @@
 # 01. Triage Orchestrator (Flow State agent)
 
-**Phase:** 1 (Tier-1 core)
+**Phase:** 1 (Tier-1 core) | **Status:** built (v1), demo + live connectors
 
 ## Purpose
 
@@ -12,10 +12,18 @@ Owns the incident lifecycle and the 28-second budget. Runs the specialist agents
 | Data sources | Sentinel REST API |
 | Actions | Updates incident status, severity, labels, comments |
 
+## Implementation
+
+Part of the runnable [Autonomous SOC Analyst](../../Autonomous_SOC_Analyst/) project:
+
+* [`soc_agent/orchestrator.py`](../../Autonomous_SOC_Analyst/soc_agent/orchestrator.py)
+* [`soc_agent/scoring.py`](../../Autonomous_SOC_Analyst/soc_agent/scoring.py)
+* [`soc_agent/api.py`](../../Autonomous_SOC_Analyst/soc_agent/api.py)
+
 ## Build checklist
 
-- [ ] Design and interfaces
-- [ ] Implementation
-- [ ] Tests
-- [ ] Demo scenario
-- [ ] Live permissions documented
+- [x] Design and interfaces
+- [x] Implementation
+- [x] Tests
+- [x] Demo scenario
+- [x] Live permissions documented

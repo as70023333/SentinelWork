@@ -1,0 +1,40 @@
+{
+  "8f3c2a5d9b1e4f6a7c0d2e9b5a3f1c8d7e6b4a2f9c1d3e5b7a9f0c2e4d6b8a1f": {
+    "source": "Demo sandbox detonation",
+    "family": "LockBit 3.0",
+    "behaviors": [
+      "Deletes volume shadow copies (vssadmin)",
+      "Disables Windows recovery (bcdedit)",
+      "Encrypts files and appends .lockbit extension",
+      "Drops ransom note README.txt in every folder",
+      "Beacons to 203.0.113.66:443 every 30s"
+    ],
+    "mitre": [
+      "T1486: Data Encrypted for Impact",
+      "T1490: Inhibit System Recovery",
+      "T1071.001: Web Protocols C2",
+      "T1059.001: PowerShell"
+    ],
+    "contacted_ips": [
+      "203.0.113.66"
+    ],
+    "contacted_domains": [],
+    "files_dropped": 1432
+  },
+  "b0d5f9c3e7a1b4d8f2c6e0a9b3d7f1c5e9a2b6d0f4c8e1a5b9d3f7c0e4a8b2d6": {
+    "source": "Demo sandbox detonation",
+    "family": "Mimikatz",
+    "behaviors": [
+      "Requests SeDebugPrivilege",
+      "Opens a handle to lsass.exe with PROCESS_VM_READ",
+      "Extracts NTLM hashes and Kerberos tickets"
+    ],
+    "mitre": [
+      "T1003.001: LSASS Memory",
+      "T1134: Access Token Manipulation"
+    ],
+    "contacted_ips": [],
+    "contacted_domains": [],
+    "files_dropped": 0
+  }
+}

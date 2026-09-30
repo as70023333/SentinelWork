@@ -1,0 +1,47 @@
+{
+  "name": "Ransomware on a finance workstation",
+  "story": "A user opens a weaponized invoice. PowerShell drops a LockBit payload that deletes shadow copies and beacons to its C2. The agent isolates the host, blocks the hash and the C2 it discovered, spots the same hash on a second host and asks for approval to isolate it, then pages on-call because ransomware is always critical.",
+  "expected": {
+    "verdict": "true_positive",
+    "severity": "critical",
+    "alert_class": "ransomware",
+    "disposition": "page"
+  },
+  "incident": {
+    "title": "Ransomware activity detected on one endpoint",
+    "description": "Microsoft Defender for Endpoint detected ransomware behavior: suspicious process deleted volume shadow copies after being launched from an Office document.",
+    "provider_severity": "high",
+    "product": "Microsoft Defender for Endpoint",
+    "tactics": [
+      "Execution",
+      "Impact"
+    ],
+    "techniques": [
+      "T1059.001",
+      "T1490",
+      "T1486"
+    ],
+    "entities": {
+      "hosts": [
+        {
+          "hostname": "WKS-FIN-042",
+          "fqdn": "wks-fin-042.contoso.com",
+          "os": "Windows 11"
+        }
+      ],
+      "accounts": [
+        {
+          "upn": "jdoe@contoso.com",
+          "display_name": "Jane Doe"
+        }
+      ],
+      "indicators": [
+        {
+          "type": "file_hash",
+          "value": "8f3c2a5d9b1e4f6a7c0d2e9b5a3f1c8d7e6b4a2f9c1d3e5b7a9f0c2e4d6b8a1f",
+          "context": "invoice_viewer.exe"
+        }
+      ]
+    }
+  }
+}

