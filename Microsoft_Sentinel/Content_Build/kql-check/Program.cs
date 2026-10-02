@@ -41,6 +41,13 @@ internal static class Program
             return 2;
         }
 
+        string selfTest = SelfTest(globals);
+        if (selfTest != null)
+        {
+            Fail("kql-check self-test failed", selfTest);
+            return 2;
+        }
+
         var failures = new List<string>();
         var warnings = new List<string>();
         int queryCount = 0;
@@ -67,7 +74,8 @@ internal static class Program
 
         string version = typeof(KustoCode).Assembly.GetName().Version?.ToString() ?? "unknown";
         string summary = $"{queryCount} queries analysed against {tableCount} tables with Kusto.Language {version}: " +
-                         $"{failures.Count} problem(s), {warnings.Count} warning(s).";
+                         $"{failures.Count} problem(s), {warnings.Count} warning(s). Self-test: 8 deliberately broken " +
+                         "queries rejected, 1 correct query accepted.";
         Console.WriteLine(summary);
 
         foreach (var warning in warnings)
@@ -119,6 +127,58 @@ internal static class Program
             throw new InvalidDataException("the schema file has no tables");
         }
         return GlobalState.Default.WithDatabase(new DatabaseSymbol("workspace", tables));
+    }
+
+    // Proves on every run that the analysis is switched on: each of these queries is wrong in a
+    // different way and must be rejected, and the correct one must pass. Without this, a schema
+    // that failed to load or a library change could turn the whole check into a silent pass.
+    private static string SelfTest(GlobalState globals)
+    {
+        var broken = new (string Query, string Why)[]
+        {
+            ("SigninLogs | where NoSuchColumn == 'x'", "a column that does not exist"),
+            ("SigninLogs | summarize Total = count() by IPAddress | where UserPrincipalName == 'x'",
+                "a column used after summarize removed it"),
+            ("SigninLogs | extend Value = no_such_function(IPAddress)", "a function that does not exist"),
+            ("NoSuchTable | take 1", "a table that does not exist"),
+            ("SigninLogs | where IPAddress ==", "a query that is not complete"),
+            ("SigninLogs | extend Value = strcat_array(IPAddress)", "a function called with too few arguments"),
+        };
+        foreach (var (query, why) in broken)
+        {
+            var failures = new List<string>();
+            CheckQuery(globals, "self-test", "self-test", query, new List<string>(), new List<string>(), failures, new List<string>());
+            if (failures.Count == 0)
+            {
+                return $"a query with {why} was accepted: {query}";
+            }
+        }
+
+        var missing = new List<string>();
+        CheckQuery(globals, "self-test", "self-test", "SigninLogs | project IPAddress",
+            new List<string> { "UserPrincipalName" }, new List<string>(), missing, new List<string>());
+        if (missing.Count != 1)
+        {
+            return "a result without a required column was accepted";
+        }
+
+        var clash = new List<string>();
+        CheckQuery(globals, "self-test", "self-test", "SigninLogs | project Risk = RiskLevelDuringSignIn, RiskState",
+            new List<string>(), new List<string> { "Risk" }, clash, new List<string>());
+        if (clash.Count != 1)
+        {
+            return "a formatted column whose name is part of another column name was accepted";
+        }
+
+        var clean = new List<string>();
+        CheckQuery(globals, "self-test", "self-test",
+            "SigninLogs | where ResultType == '0' | summarize SignIns = count() by IPAddress | top 5 by SignIns desc",
+            new List<string> { "IPAddress", "SignIns" }, new List<string> { "SignIns" }, clean, new List<string>());
+        if (clean.Count != 0)
+        {
+            return "a correct query was rejected: " + string.Join("; ", clean);
+        }
+        return null;
     }
 
     private static void CheckQuery(GlobalState globals, string id, string source, string query,
