@@ -26,8 +26,8 @@ let Messages = EmailEvents
     | project NetworkMessageId, SenderFromAddress, Subject;
 UrlClickEvents
 | where TimeGenerated > ago(2h)
-// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-| where ingestion_time() > ago(1h)
+// Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
 | where ThreatTypes has_any ("Phish", "Malware")
 | where ActionType == "ClickAllowed" or IsClickedThrough == true
 | summarize Clicks = count(),

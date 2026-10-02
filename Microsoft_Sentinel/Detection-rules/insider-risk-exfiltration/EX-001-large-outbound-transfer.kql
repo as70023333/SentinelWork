@@ -9,9 +9,9 @@
 // Entities: IP(Address=SourceIP); IP(Address=DestinationIP); Account(Name=SourceUser)
 // Custom details: SentGB, UploadRatio, Sessions, Firewall
 // Description: According to the firewall, one internal address sent more than a gigabyte to a single
-//   internet address within an hour. Most traffic downloads more than it uploads, so a large upload
-//   to one place is worth a look whether it is a backup, a sync client or someone taking data out.
-//   Only IPv4 is evaluated.
+//   internet address within two hours. Most traffic downloads more than it uploads, so a large
+//   upload to one place is worth a look whether it is a backup, a sync client or someone taking data
+//   out. Only IPv4 is evaluated.
 // False positives: Cloud backup, file sync, video conferencing, software distribution and replication
 //   to a partner or another site over the internet. A firewall that also logs running totals for
 //   sessions still in progress makes the figure too high, because the same bytes are added twice.
@@ -26,14 +26,21 @@ let AllowedDestinations = dynamic([]);
 let AllowedSources = dynamic([]);
 // Not private, but not the internet either: carrier NAT, link-local, loopback, multicast, broadcast.
 let NotInternet = dynamic(["100.64.0.0/10", "169.254.0.0/16", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32"]);
+// Source and destination pairs with traffic that reached the workspace since the last run. Each
+// pair is then judged on the last two hours, so a transfer that straddles two runs is counted whole.
+let Touched = CommonSecurityLog
+    | where TimeGenerated > ago(2h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+    | distinct SourceIP, DestinationIP;
 CommonSecurityLog
 | where TimeGenerated > ago(2h)
-// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-| where ingestion_time() > ago(1h)
 | where isnotempty(SourceIP) and isnotempty(DestinationIP)
 | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
 | where not(ipv4_is_in_any_range(DestinationIP, NotInternet))
 | where DestinationIP !in (AllowedDestinations) and SourceIP !in (AllowedSources)
+| join kind=inner Touched on SourceIP, DestinationIP
 | summarize BytesSent = sum(SentBytes),
             BytesReceived = sum(ReceivedBytes),
             Sessions = count(),

@@ -525,9 +525,9 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| extend AssignedTo = tostring(Owner.assignedTo)\r\n| where isnotempty(AssignedTo)\r\n| summarize Closed = countif(Status == \"Closed\"),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            HoursToClose = avgif((ClosedTime - CreatedTime) / 1h, Status == \"Closed\" and isnotnull(ClosedTime))\r\n            by AssignedTo\r\n| project AssignedTo, Closed, StillOpen, MeanHoursToClose = iff(isnan(HoursToClose), real(null), round(HoursToClose, 1))\r\n| top 50 by Closed desc",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n// Whenever the incident was created: clearing old backlog counts as work done in the range.\r\n| where Status == \"Closed\" and ClosedTime >= {TimeRange:start}\r\n| extend AssignedTo = tostring(Owner.assignedTo)\r\n| where isnotempty(AssignedTo)\r\n| summarize Closed = count(),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            HoursToClose = avg((ClosedTime - CreatedTime) / 1h)\r\n            by AssignedTo\r\n| project AssignedTo, Closed, TruePositives, MeanHoursToClose = round(HoursToClose, 1)\r\n| top 50 by Closed desc",
               "size": 0,
-              "title": "Work closed by each owner",
+              "title": "Incidents closed in the time range, by owner",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
                 "durationMs": 0

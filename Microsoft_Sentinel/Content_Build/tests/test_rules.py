@@ -81,16 +81,23 @@ class RepositoryRuleTests(unittest.TestCase):
         self.assertEqual(self.rules[0].guid, "07dec7c4-739b-532d-af40-42fb21e26b80")
 
     def test_event_rules_tolerate_late_data(self):
-        # A rule that looks for events must pick them by arrival time and read further back than it
-        # runs; otherwise an event that reaches the workspace late is never evaluated. Rules that
-        # report a state (a table gone quiet, an incident left open, a noisy rule) are the exception.
+        # A rule that looks for events must pick them by arrival time, in a window exactly as long
+        # as its Frequency, and read further back than that; otherwise an event that reaches the
+        # workspace late is never evaluated, or is evaluated twice. Rules that report a state (a
+        # table gone quiet, an incident left open, a noisy rule) are the exception.
         state_rules = {"SO-001", "SO-003", "SO-004"}
         for rule in self.rules:
             with self.subTest(rule=rule.id):
+                windows, _, problems = kql.arrival_windows(rule.query)
+                self.assertEqual(problems, [])
                 if rule.id in state_rules:
+                    self.assertEqual(windows, [])
                     continue
-                self.assertIn("ingestion_time()", rule.query)
-                self.assertGreater(rules.duration_seconds(rule.period), rules.duration_seconds(rule.frequency))
+                self.assertTrue(windows)
+                frequency = rules.duration_seconds(rule.frequency)
+                for lower, upper in windows:
+                    self.assertEqual((upper, lower - upper), (rules.RUN_DELAY_SECONDS, frequency))
+                    self.assertGreater(rules.duration_seconds(rule.period), lower)
 
     def test_no_query_has_an_empty_line_or_a_comment_left_in_the_template(self):
         for rule in self.rules:
@@ -227,11 +234,33 @@ class CheckTests(unittest.TestCase):
             (changed("// Period: PT1H", "// Period: PT1H\n// Incidents: CustomDetails(), PT5H"), "must name at least one thing"),
             (changed("ago(1h)", "ago(Window)"), "cannot tell how far ago(...) looks back"),
             (changed("| where TimeGenerated > ago(1h)", "| where TimeGenerated > now(-7d)"), "now() with an offset"),
+            (changed("ago(1h)", "ago(1h) - 30d"), "arithmetic on ago(...)"),
+            (changed("ago(1h)", "now() - 2 * 7d"), "cannot tell how far now() - ..."),
+            (changed("ago(1h)", "startofmonth(now())"), "inside a function that moves the time"),
             (changed("| where ResultType ==", "\n| where ResultType =="), "has an empty line"),
         )
         for text, expected in cases:
             with self.subTest(expected=expected):
                 self.assertProblem(text, expected)
+
+    def test_arrival_windows_must_match_the_schedule(self):
+        window = "| where TimeGenerated > ago(2h)\n| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)"
+        good = changed("Period: PT1H", "Period: PT2H").replace("| where TimeGenerated > ago(1h)", window)
+        self.assertEqual(check(good)[1], [])
+        cases = (
+            (good.replace("ago(65m)", "ago(35m)"), "exactly as long as Frequency"),
+            (good.replace("Frequency: PT1H", "Frequency: PT30M"), "exactly as long as Frequency"),
+            (good.replace("ago(65m) and ingestion_time() <= ago(5m)", "ago(60m) and ingestion_time() <= ago(0m)"), "must end at ago(5m)"),
+            (good.replace(" and ingestion_time() <= ago(5m)", ""), "ingestion_time() must be written as"),
+            (good.replace("| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)", "| where ingestion_time() <= ago(50m)"), "start of the arrival window"),
+            (good.replace("ago(65m)", "ago(Window)"), "cannot read the arrival window"),
+        )
+        for text, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertProblem(text, expected)
+        # Words in a comment do not count as using the pattern.
+        commented = good.replace("| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)", "// ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)")
+        self.assertEqual(kql.arrival_windows(rules.split_header(commented, "x")[1])[0], [])
 
     def test_a_let_name_used_as_lookback_is_measured(self):
         text = changed("SigninLogs\n| where TimeGenerated > ago(1h)", "let Window = 7d;\nSigninLogs\n| where TimeGenerated > ago(Window)")
@@ -244,6 +273,8 @@ class CheckTests(unittest.TestCase):
         _, problems = check(changed('ResultType == "50126"', 'ResultType == "50126'))
         self.assertEqual(len(problems), 1)
         self.assertTrue(problems[0].startswith(f"line {header_lines + 3}: unexpected character"), problems)
+        _, problems = check(changed("count() by IPAddress", "count(] by IPAddress"))
+        self.assertEqual(problems, [f"line {header_lines + 4}: ']' closes the '(' opened on line {header_lines + 4}"])
         _, problems = check(changed("ago(1h)", "ago(Window)"))
         self.assertTrue(any(p.startswith(f"line {header_lines + 2}: cannot tell") for p in problems), problems)
 

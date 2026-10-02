@@ -47,7 +47,7 @@ Rules that only repeat an alert a Microsoft product already raises were left out
 
 | Rule group | Data connector | Table must exist |
 |---|---|---|
-| ID, PA | Microsoft Entra ID (sign-in logs and audit logs) | `SigninLogs`, `AuditLogs`. ID-004 also reads `AADNonInteractiveUserSignInLogs` when it is collected and works without it. |
+| ID, PA | Microsoft Entra ID (sign-in logs and audit logs) | `SigninLogs`, `AuditLogs`. ID-004 also reads `AADNonInteractiveUserSignInLogs` when it is collected and works without it (`union isfuzzy=true`). |
 | EP, EX-002, EX-004 | Microsoft Defender XDR (device events) | `DeviceProcessEvents`, `DeviceEvents`, `DeviceFileEvents` |
 | EM, EX-003 | Microsoft Defender XDR (email, URL click and cloud app events) | `EmailEvents`, `UrlClickEvents`, `EmailPostDeliveryEvents`, `CloudAppEvents` |
 | AZ | Azure Activity | `AzureActivity` |
@@ -103,10 +103,20 @@ a day. The catalogue lists the schedule of every rule.
 Log data does not arrive the moment it is created: a few minutes is normal, and Microsoft 365
 audit data can take more than an hour. A rule that simply read "the last hour" would never see an
 event that arrived late. So every rule that looks for events reads further back than it runs (two
-hours for most, four for Microsoft 365 audit data) and keeps the events that **reached the
-workspace** in the last hour, using `ingestion_time()`. Each event is evaluated once, whenever it
-arrives. This is the approach Microsoft documents for
-[ingestion delay](https://learn.microsoft.com/azure/sentinel/ingestion-delay).
+hours for most, four for Microsoft 365 audit data) and picks the rows that reached the workspace
+in a window exactly as long as its schedule, using `ingestion_time()`. Sentinel starts a scheduled
+rule five minutes after the time it is scheduled for, so the window ends five minutes before now
+and does not overlap the next run:
+
+```kql
+| where TimeGenerated > ago(2h)
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+```
+
+Each row is evaluated once, whenever it arrives. A rule that counts (a password spray, a mass
+deletion, a mass upload) first picks the entities with new rows and then counts their activity
+over the whole Period, so a burst that straddles a run boundary is counted whole. This follows
+Microsoft's guidance for [ingestion delay](https://learn.microsoft.com/azure/sentinel/ingestion-delay).
 
 Rules that compare with history (new country, mass download) read 14 days; rules that join to
 earlier events (a click on mail delivered days ago, a USB drive mounted earlier in the week)
@@ -213,8 +223,9 @@ data and no rule was deployed by the author. That matters in three places:
 ## Limits
 
 - Scheduled rules only. No near-real-time rules, no anomaly or Fusion rules, no automation rules.
-- ID-001, ID-002 and ID-003 read interactive sign-ins only (`SigninLogs`). Token replay and other
-  activity that shows up only in non-interactive sign-ins is not covered.
+- ID-001, ID-002 and ID-003 read interactive sign-ins only (`SigninLogs`), the one `ID-004` also
+  reads non-interactive sign-ins. Token replay and other activity that shows up only in
+  non-interactive sign-ins is not covered by the other three.
 - `EX-001` understands IPv4 addresses. IPv6 traffic is not evaluated.
 - `EM-*` rules need the Defender for Office 365 tables in the workspace. Whether URL click and
   post-delivery events are produced at all depends on your Defender for Office 365 licence.

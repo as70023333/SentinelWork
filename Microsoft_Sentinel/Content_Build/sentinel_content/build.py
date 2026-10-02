@@ -129,6 +129,16 @@ def generated_files(rules: list[Rule], books: list[Workbook], enabled: bool = Fa
     return files
 
 
+def overwrite_problems(files: dict[Path, str], root: Path) -> list[str]:
+    """Workbook files under root that exist, were not written by this tool, and would be replaced."""
+    books_dir = WORKBOOKS_DIR.relative_to(CONTENT_ROOT)
+    return [
+        f"{relative.as_posix()} exists and was not written by this tool; move it or choose another folder"
+        for relative in files
+        if relative.parent == books_dir and (root / relative).exists() and not is_generated_workbook(root / relative)
+    ]
+
+
 def write_files(files: dict[Path, str], root: Path) -> list[Path]:
     """Write the files under root and return the ones whose contents changed."""
     changed = []

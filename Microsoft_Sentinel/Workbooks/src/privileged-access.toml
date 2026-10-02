@@ -38,7 +38,7 @@ AuditLogs
             SecurityInfo = countif(OperationName has "security info"),
             AdminResets = countif(OperationName =~ "Reset user password")
 | project Tiles = pack_array(
-    bag_pack("Metric", "Role assignments and PIM activations", "Value", RoleChanges),
+    bag_pack("Metric", "Role membership changes and PIM activations", "Value", RoleChanges),
     bag_pack("Metric", "Application credential changes", "Value", AppCredentials),
     bag_pack("Metric", "Consents and permission grants", "Value", Grants),
     bag_pack("Metric", "Conditional Access policy changes", "Value", PolicyChanges),
@@ -59,7 +59,7 @@ AuditLogs
                  and tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax"))
                 or (LoggedByService =~ "PIM" and OperationName has "completed")))
 | extend Change = case(
-    RoleChange, "Role assignments and activations",
+    RoleChange, "Role membership and activations",
     OperationName has "Certificates and secrets management" or OperationName has "service principal credentials", "Application credentials",
     OperationName in~ ("Consent to application", "Add app role assignment to service principal", "Add delegated permission grant"), "Consents and permissions",
     OperationName has "conditional access policy", "Conditional Access",
@@ -83,7 +83,7 @@ AuditLogs
                  and tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax"))
                 or (LoggedByService =~ "PIM" and OperationName has "completed")))
 | extend Change = case(
-    RoleChange, "Role assignments and activations",
+    RoleChange, "Role membership and activations",
     OperationName has "Certificates and secrets management" or OperationName has "service principal credentials", "Application credentials",
     OperationName in~ ("Consent to application", "Add app role assignment to service principal", "Add delegated permission grant"), "Consents and permissions",
     OperationName has "conditional access policy", "Conditional Access",

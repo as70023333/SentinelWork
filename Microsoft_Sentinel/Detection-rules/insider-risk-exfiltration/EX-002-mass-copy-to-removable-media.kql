@@ -9,7 +9,7 @@
 // Period: P7D
 // Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain)
 // Custom details: Files, TotalMB, UsbProduct, UsbSerial, DriveLetter
-// Description: A user created a large number of files on a USB drive within an hour. The rule pairs
+// Description: A user created a large number of files on a USB drive within two hours. The rule pairs
 //   each new file with the USB drive that was most recently mounted on that drive letter, so internal
 //   drives and network shares are not counted and the alert names the right drive when a letter has
 //   been used by more than one.
@@ -33,11 +33,17 @@ let Mounts = DeviceEvents
               UsbProduct = tostring(Usb.ProductName),
               UsbSerial = tostring(Usb.SerialNumber)
     | where isnotempty(DriveLetter);
+// Devices with a new file that reached the workspace since the last run. Each is then judged on the
+// last two hours, so a copy that straddles two runs is counted whole.
+let Touched = DeviceFileEvents
+    | where TimeGenerated > ago(2h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where ActionType == "FileCreated"
+    | distinct DeviceId;
 DeviceFileEvents
 | where TimeGenerated > ago(2h)
-// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-| where ingestion_time() > ago(1h)
-| where ActionType == "FileCreated"
+| where ActionType == "FileCreated" and DeviceId in (Touched)
 | extend DriveLetter = toupper(substring(FolderPath, 0, 2)),
          Extension = tolower(extract(@"\.([A-Za-z0-9]{1,8})$", 1, FileName))
 | where Extension !in (IgnoredExtensions)

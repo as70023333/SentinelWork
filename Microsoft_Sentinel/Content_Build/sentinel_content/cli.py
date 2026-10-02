@@ -75,7 +75,13 @@ def run(argv: list[str] | None = None) -> int:
             print("--out must be a different folder: the templates in the repository keep their rules disabled",
                   file=sys.stderr)  # fmt: skip
             return EXIT_ERROR
-        changed = build.write_files(build.generated_files(rules, books, enabled=args.enabled), root)
+        files = build.generated_files(rules, books, enabled=args.enabled)
+        blocked = build.overwrite_problems(files, root)
+        if blocked:
+            print("nothing was written:", file=sys.stderr)
+            _report(blocked)
+            return EXIT_ERROR
+        changed = build.write_files(files, root)
         for relative in changed:
             print(f"wrote {relative.as_posix()}")
         print(f"{len(rules)} rules and {len(books)} workbooks built; {len(changed)} file(s) changed under {root}")

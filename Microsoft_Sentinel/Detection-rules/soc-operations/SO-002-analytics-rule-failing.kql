@@ -3,24 +3,34 @@
 // Severity: Medium
 // Tables: SentinelHealth
 // Frequency: PT1H
-// Period: PT2H
+// Period: P1D
 // Incidents: CustomDetails(RuleName), P1D
 // Custom details: RuleName, Failures, Reason, RuleKind
-// Description: A scheduled or near-real-time analytics rule failed more than once in the last hour.
-//   A rule that cannot run detects nothing, and Sentinel disables a rule automatically after
-//   repeated failures. Requires the health monitoring setting, which creates the SentinelHealth table.
-// False positives: A short platform problem that resolves itself; the failures stop within the hour.
+// Description: A scheduled or near-real-time analytics rule has failed more than once in the last
+//   day and failed again since the last run of this rule. A rule that cannot run detects nothing,
+//   and Sentinel disables a rule automatically after repeated failures. Requires the health
+//   monitoring setting, which creates the SentinelHealth table. It is an operational rule and has
+//   no MITRE ATT&CK mapping.
+// False positives: A short platform problem that resolves itself; the failures stop and so does the
+//   alert.
 // Tuning: Lower MinFailures to 1 if you want to hear about every failed run.
 // Response: Read Reason. The usual causes are a table that no longer exists, a query that times out,
 //   or a permission removed from a rule that reads another workspace. Fix it and re-enable the rule
 //   if Sentinel disabled it.
 // References: https://learn.microsoft.com/azure/sentinel/monitor-analytics-rule-integrity
 let MinFailures = 2;
+// Rules with a failure that reached the workspace since the last run. Each is then judged on the
+// whole day: a rule that runs hourly writes one record an hour, so one hour alone cannot hold two.
+let Touched = SentinelHealth
+    | where TimeGenerated > ago(1d)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where SentinelResourceType =~ "Analytics Rule" and Status =~ "Failure"
+    | distinct SentinelResourceId;
 SentinelHealth
-| where TimeGenerated > ago(2h)
-// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-| where ingestion_time() > ago(1h)
+| where TimeGenerated > ago(1d)
 | where SentinelResourceType =~ "Analytics Rule" and Status =~ "Failure"
+| where SentinelResourceId in (Touched)
 | summarize Failures = count(),
             FirstFailure = min(TimeGenerated),
             LastFailure = max(TimeGenerated),

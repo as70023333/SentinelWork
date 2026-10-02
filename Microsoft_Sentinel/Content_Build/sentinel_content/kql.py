@@ -320,11 +320,10 @@ def check_names(query: str, schema: dict[str, dict[str, str]], workbook: bool = 
 
 
 def _shift(problem: str, first_line: int) -> str:
-    """Turn 'line N' counted from the start of the query into the line of the file."""
-    match = re.match(r"line (\d+)", problem)
-    if match is None or first_line == 1:
+    """Turn every 'line N' counted from the start of the query into the line of the file."""
+    if first_line == 1:
         return problem
-    return f"line {int(match.group(1)) + first_line - 1}{problem[match.end():]}"
+    return re.sub(r"\bline (\d+)", lambda match: f"line {int(match.group(1)) + first_line - 1}", problem)
 
 
 def names_in(query: str, workbook: bool = False) -> set[str]:
@@ -338,48 +337,141 @@ def _timespan_seconds(text: str) -> float | None:
     return float(match.group(1)) * _UNIT_SECONDS[match.group(2)] if match else None
 
 
+# Functions that move a time, so that ago() or now() inside them no longer says how far back the
+# query reaches.
+_TIME_SHIFTING = frozenset("startofday startofweek startofmonth endofday bin bin_at datetime_add".split())
+
+
+def _let_values(tokens: list[Token]) -> tuple[dict[str, float], set[str]]:
+    """({name: seconds} for 'let Name = 1h;', every other name set with let)."""
+    timespans: dict[str, float] = {}
+    others: set[str] = set()
+    for index, token in enumerate(tokens[:-3]):
+        if token.kind == "name" and token.text == "let" and tokens[index + 2].text == "=":
+            name = tokens[index + 1].text
+            seconds = _timespan_seconds(tokens[index + 3].text)
+            if seconds is not None and index + 4 < len(tokens) and tokens[index + 4].text == ";":
+                timespans[name] = seconds
+            else:
+                others.add(name)
+    return timespans, others
+
+
+def _enclosing_function(tokens: list[Token], index: int) -> str:
+    """The name of the function whose brackets directly contain the token at index, or ''."""
+    depth = 0
+    for position in range(index - 1, -1, -1):
+        text = tokens[position].text
+        if tokens[position].kind != "op":
+            continue
+        if text == ")":
+            depth += 1
+        elif text == "(":
+            if depth == 0:
+                return tokens[position - 1].text if position and tokens[position - 1].kind == "name" else ""
+            depth -= 1
+    return ""
+
+
 def lookback(query: str) -> tuple[float, list[str]]:
     """How far back the query reaches, in seconds, and anything that could not be worked out.
 
     Sentinel only gives a rule the data of its Period, so a rule must not look back further.
-    Understood: ago(1h), ago(Name) where "let Name = 1h;" and now() - 1h (or - Name). Anything else
-    inside ago(), and now() with an offset, is reported: a check that cannot read the value must
-    say so, not assume it is fine.
+    Understood: ago(1h), ago(Name) where "let Name = 1h;", and now() - 1h (or - Name). The usual
+    ways of reaching further than those say are reported: arithmetic on the result, ago() or now()
+    inside a function that moves a time, now() with an offset, and anything else inside ago(). It
+    is a guard against mistakes, not a proof: a query can still compute an older time in a way
+    this does not recognise.
     """
     tokens = tokenize(query)
-    timespans: dict[str, float] = {}
-    for index, token in enumerate(tokens[:-4]):
-        if token.kind == "name" and token.text == "let" and tokens[index + 2].text == "=" and tokens[index + 4].text == ";":
-            seconds = _timespan_seconds(tokens[index + 3].text)
-            if seconds is not None:
-                timespans[tokens[index + 1].text] = seconds
+    timespans, other_lets = _let_values(tokens)
 
     def value(token: Token) -> float | None:
         if token.kind == "number":
             return _timespan_seconds(token.text)
         return timespans.get(token.text) if token.kind == "name" else None
 
+    def text_at(position: int) -> str:
+        return tokens[position].text if position < len(tokens) else ""
+
     longest = 0.0
     problems: list[str] = []
     for index, token in enumerate(tokens):
-        if token.kind != "name" or index + 1 >= len(tokens) or tokens[index + 1].text != "(":
+        if token.kind != "name" or token.text not in ("ago", "now") or text_at(index + 1) != "(":
             continue
         if index and tokens[index - 1].text == ".":
             continue
+        where = f"line {token.line}"
+        if _enclosing_function(tokens, index) in _TIME_SHIFTING:
+            problems.append(f"{where}: {token.text}() inside a function that moves the time; the look-back cannot be checked")
+            continue
+        if index >= 2 and tokens[index - 1].text == "=" and index >= 3 and tokens[index - 3].text == "let":
+            problems.append(f"{where}: 'let {tokens[index - 2].text} = {token.text}(...)' hides the look-back; use {token.text}(...) where it is needed")
+            continue
         if token.text == "ago":
-            inside = tokens[index + 2] if index + 2 < len(tokens) else None
-            closes = index + 3 < len(tokens) and tokens[index + 3].text == ")"
-            seconds = value(inside) if inside is not None and closes else None
+            seconds = value(tokens[index + 2]) if text_at(index + 3) == ")" else None
             if seconds is None:
-                problems.append(f"line {token.line}: cannot tell how far ago(...) looks back; use a literal such as "
+                problems.append(f"{where}: cannot tell how far ago(...) looks back; use a literal such as "
                                 "ago(1h) or a name set with 'let Name = 1h;'")  # fmt: skip
-            else:
-                longest = max(longest, seconds)
-        elif token.text == "now":
-            if index + 2 >= len(tokens) or tokens[index + 2].text != ")":
-                problems.append(f"line {token.line}: now() with an offset is not understood; use ago(...)")
-            elif index + 4 < len(tokens) and tokens[index + 3].text == "-":
-                seconds = value(tokens[index + 4])
-                if seconds is not None:
-                    longest = max(longest, seconds)
+                continue
+            longest = max(longest, seconds)
+            if text_at(index + 4) in ("-", "+", "*"):
+                problems.append(f"{where}: arithmetic on ago(...) changes the look-back; write the whole span inside ago()")
+            continue
+        if text_at(index + 2) != ")":
+            problems.append(f"{where}: now() with an offset is not understood; use ago(...)")
+            continue
+        if text_at(index + 3) != "-":
+            continue
+        after = tokens[index + 4] if index + 4 < len(tokens) else None
+        seconds = value(after) if after is not None else None
+        if seconds is not None:
+            longest = max(longest, seconds)
+            if text_at(index + 5) in ("-", "+", "*"):
+                problems.append(f"{where}: arithmetic after now() - <span> changes the look-back; use ago(...) with the whole span")
+        elif after is None or after.kind != "name" or after.text in other_lets or text_at(index + 5) == "(":
+            # now() - <column> is how an age is computed and is fine; anything else is a look-back.
+            problems.append(f"{where}: cannot tell how far now() - ... looks back; use ago(...) with a literal span")
     return longest, problems
+
+
+_ARRIVAL_USE = re.compile(r"ingestion_time\(\)")
+_ARRIVAL_WINDOW = re.compile(r"ingestion_time\(\) > ago\((\w+)\) and ingestion_time\(\) <= ago\((\w+)\)")
+_ARRIVAL_BEFORE = re.compile(r"ingestion_time\(\) <= ago\((\w+)\)")
+
+
+def arrival_windows(query: str) -> tuple[list[tuple[float, float]], list[float], list[str]]:
+    """How the query selects rows by the time they reached the workspace.
+
+    Returns (windows, earlier, problems). A window is "ingestion_time() > ago(A) and
+    ingestion_time() <= ago(B)" as (A, B) in seconds; earlier is every "ingestion_time() <= ago(A)"
+    on its own (everything that arrived before a window). Any other use of ingestion_time() is a
+    problem: the forms are fixed so that they can be checked against the rule's Frequency.
+    """
+    tokens = tokenize(query)
+    timespans, _ = _let_values(tokens)
+    code = " ".join(strip_comments(query).split())
+
+    def seconds(text: str) -> float | None:
+        found = _timespan_seconds(text)
+        return found if found is not None else timespans.get(text)
+
+    windows: list[tuple[float, float]] = []
+    earlier: list[float] = []
+    problems: list[str] = []
+    for lower, upper in _ARRIVAL_WINDOW.findall(code):
+        if seconds(lower) is None or seconds(upper) is None:
+            problems.append(f"cannot read the arrival window ago({lower}) .. ago({upper})")
+        else:
+            windows.append((seconds(lower), seconds(upper)))
+    alone = _ARRIVAL_BEFORE.findall(_ARRIVAL_WINDOW.sub("", code))
+    for bound in alone:
+        if seconds(bound) is None:
+            problems.append(f"cannot read ingestion_time() <= ago({bound})")
+        else:
+            earlier.append(seconds(bound))
+    uses = len(_ARRIVAL_USE.findall(code))
+    if uses != 2 * len(_ARRIVAL_WINDOW.findall(code)) + len(alone):
+        problems.append("ingestion_time() must be written as 'ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)' "
+                        "(or '<= ago(65m)' alone for what arrived earlier)")  # fmt: skip
+    return windows, earlier, problems

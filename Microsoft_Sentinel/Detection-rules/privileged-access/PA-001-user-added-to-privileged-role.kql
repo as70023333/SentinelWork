@@ -30,8 +30,8 @@ let PrivilegedRoles = dynamic([
 let AllowedActors = dynamic([]);
 let Direct = AuditLogs
     | where TimeGenerated > ago(2h)
-    // Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-    | where ingestion_time() > ago(1h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
     | where LoggedByService =~ "Core Directory" and Category =~ "RoleManagement" and Result =~ "success"
     | where OperationName in~ ("Add member to role", "Add eligible member to role", "Add scoped member to role")
     // PIM writes its own records for the same change; they are read below.
@@ -42,7 +42,7 @@ let Direct = AuditLogs
     | extend Target = TargetResources[0], AssignmentType = "Direct";
 let ThroughPim = AuditLogs
     | where TimeGenerated > ago(2h)
-    | where ingestion_time() > ago(1h)
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
     | where LoggedByService =~ "PIM" and Category =~ "RoleManagement" and Result =~ "success"
     | where OperationName in~ (
         "Add member to role in PIM completed (permanent)", "Add member to role in PIM completed (timebound)",

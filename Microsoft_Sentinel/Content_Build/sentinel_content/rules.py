@@ -351,6 +351,7 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
         problems.extend(_file_line(problem, rule) for problem in unclear)
         if longest > seconds["Period"]:
             problems.append(f"the query looks back further (ago) than Period {rule.period}; Sentinel only reads the Period")
+        problems.extend(_arrival_problems(rule, seconds["Frequency"]))
     if rule.trigger_operator not in TRIGGER_OPERATORS:
         problems.append(f"Trigger operator {rule.trigger_operator!r} is not one of {', '.join(TRIGGER_OPERATORS)}")
     if not 0 <= rule.trigger_threshold <= 10000:
@@ -436,12 +437,33 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
     return problems
 
 
+# Sentinel starts a scheduled rule five minutes after the time it is scheduled for.
+RUN_DELAY_SECONDS = 300
+
+
+def _arrival_problems(rule: Rule, frequency: int) -> list[str]:
+    """Check that rows selected by arrival time are selected once: no gap and no overlap between runs."""
+    try:
+        windows, earlier, problems = kql.arrival_windows(rule.query)
+    except kql.KqlError:
+        return []  # reported with its line elsewhere
+    for lower, upper in windows:
+        if upper != RUN_DELAY_SECONDS:
+            problems.append("an arrival window must end at ago(5m): Sentinel runs a rule five minutes late, and "
+                            "rows that arrive in that time belong to the next run")  # fmt: skip
+        if lower - upper != frequency:
+            problems.append(f"an arrival window must be exactly as long as Frequency {rule.frequency}, or rows "
+                            "are read twice or never")  # fmt: skip
+    for bound in earlier:
+        if bound not in {lower for lower, _ in windows}:
+            problems.append("'ingestion_time() <= ago(X)' must use the start of the arrival window, so the two "
+                            "parts do not overlap or leave a gap")  # fmt: skip
+    return problems
+
+
 def _file_line(problem: str, rule: Rule) -> str:
-    """Rewrite 'line N' counted within the query as the line of the rule file."""
-    match = re.match(r"line (\d+)", problem)
-    if match is None:
-        return problem
-    return f"line {int(match.group(1)) + rule.query_line - 1}{problem[match.end():]}"
+    """Rewrite every 'line N' counted within the query as the line of the rule file."""
+    return re.sub(r"\bline (\d+)", lambda match: f"line {int(match.group(1)) + rule.query_line - 1}", problem)
 
 
 def stray_rule_files(rules_dir: Path | None = None) -> list[str]:

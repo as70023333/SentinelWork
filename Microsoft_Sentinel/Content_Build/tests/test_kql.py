@@ -157,9 +157,30 @@ class NameCheckTests(unittest.TestCase):
         self.assertEqual(kql.lookback('// ago(30d)\nT | where a == "ago(99d)" | take 1'), (0, []))
         self.assertEqual(kql.lookback("T | where a < now() and b.ago(c) == 1")[1], [])
 
+    def test_computing_an_age_is_not_a_lookback(self):
+        for query in ("T | extend Age = toint((now() - LastRecord) / 1h)", "T | summarize Oldest = max((now() - Created) / 1d)",
+                      "T | where a > ago(2h) | extend Hours = datetime_diff('hour', now(), a)",
+                      "T | where a < b - 1h and a > ago(3h)"):  # fmt: skip
+            with self.subTest(query=query):
+                self.assertEqual(kql.lookback(query)[1], [])
+
+    def test_arrival_windows(self):
+        query = "T | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m) | union (T | where ingestion_time() <= ago(65m))"
+        self.assertEqual(kql.arrival_windows(query), ([(3900.0, 300.0)], [3900.0], []))
+        self.assertEqual(kql.arrival_windows("let Start = 65m; T\n| where ingestion_time() > ago(Start)\n    and ingestion_time() <= ago(5m)")[0], [(3900.0, 300.0)])
+        self.assertEqual(kql.arrival_windows("T | take 1 // ingestion_time()"), ([], [], []))
+        for query in ("T | where ingestion_time() > ago(1h)", "T | extend Arrived = ingestion_time()",
+                      "T | where ingestion_time() between (ago(65m) .. ago(5m))"):  # fmt: skip
+            with self.subTest(query=query):
+                self.assertEqual(len(kql.arrival_windows(query)[2]), 1)
+
     def test_lookback_that_cannot_be_read_is_reported(self):
         for query in ("T | where a > ago(Window)", "T | where a > ago(1h + 30m)", "T | where a > ago(time(30d))",
-                      "T | where a > ago(30days)", "T | where a > now(-30d)"):  # fmt: skip
+                      "T | where a > ago(30days)", "T | where a > now(-30d)", "T | where a > ago(1h) - 30d",
+                      "T | where a > now() - 2 * 7d", "T | where a > now() - (30d)", "T | where a > now() - 1h - 30d",
+                      "T | where a > startofmonth(now())", "T | where a > datetime_add('day', -30, now())",
+                      "T | where a > now() - time(30d)", "let W = 1h; let W2 = W * 100; T | where a > now() - W2",
+                      "let Back = ago(1h); T | where a > Back - 30d", "T | where a > bin(ago(1h), 30d)"):  # fmt: skip
             with self.subTest(query=query):
                 seconds, unclear = kql.lookback(query)
                 self.assertEqual(len(unclear), 1, unclear)

@@ -210,6 +210,20 @@ class CommandLineTests(unittest.TestCase):
         # The repository copy is untouched and still has every rule disabled.
         self.assertEqual(run("check")[0], 0)
 
+    def test_a_hand_made_workbook_in_the_output_folder_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "Workbooks" / f"{BOOKS[0].file}.json"
+            target.parent.mkdir()
+            target.write_text('{"hand": "made"}', encoding="utf-8")
+            code, _, err = run("build", "--out", folder)
+            self.assertEqual(code, 2)
+            self.assertIn("was not written by this tool", err)
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"hand": "made"}')
+            self.assertFalse((Path(folder) / "Detection-rules").exists())
+            target.unlink()
+            self.assertEqual(run("build", "--out", folder)[0], 0)
+            self.assertEqual(run("build", "--out", folder)[0], 0)  # its own output may be replaced
+
     def test_enabled_without_out_is_refused(self):
         code, _, err = run("build", "--enabled")
         self.assertEqual(code, 2)

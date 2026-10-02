@@ -20,16 +20,19 @@
 //   not travelling, revoke sessions and reset the password.
 // References: https://learn.microsoft.com/entra/identity/monitoring-health/concept-sign-ins
 let ExpectedCountries = dynamic([]);
+// Everything that arrived before this run's rows: the two sets never overlap, so a sign-in that
+// has been reported is part of the history at the next run and is not reported again.
 let Known = SigninLogs
-    | where TimeGenerated between (ago(14d) .. ago(2h))
+    | where TimeGenerated > ago(14d)
+    | where ingestion_time() <= ago(65m)
     | where ResultType == "0" and isnotempty(Location)
     | summarize by UserId, Location;
 let History = Known
     | summarize KnownCountries = strcat_array(make_set(Location, 20), ", ") by UserId;
 SigninLogs
-| where TimeGenerated > ago(2h)
-// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-| where ingestion_time() > ago(1h)
+| where TimeGenerated > ago(14d)
+// Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
 | where ResultType == "0" and isnotempty(Location)
 | where Location !in (ExpectedCountries)
 | join kind=leftanti Known on UserId, Location

@@ -15,7 +15,8 @@
 //   mailbox, an attacker does this to read the victim's mail and to hide the replies to the
 //   fraudulent messages they send. Rules made in Outlook on the web or PowerShell (New-InboxRule,
 //   Set-InboxRule, Set-Mailbox) and rules made in the Outlook desktop client (UpdateInboxRules) are
-//   both read. The rule reads four hours because this audit data can arrive more than an hour late.
+//   both read; for Outlook desktop the folder case depends on the record naming the folder, which
+//   has not been confirmed. The rule reads four hours because this audit data can arrive late.
 // False positives: Users who forward to a personal or shared mailbox, and rules that file newsletters
 //   into Archive or delete notifications.
 // Tuning: Block automatic external forwarding in the outbound spam policy. Remove "Archive" from
@@ -27,8 +28,8 @@ let HidingFolders = dynamic(["RSS", "Conversation History", "Archive", "Junk", "
 // Outlook on the web and PowerShell: the settings are cmdlet parameters.
 let FromCmdlets = CloudAppEvents
     | where TimeGenerated > ago(4h)
-    // Events are chosen by when they reached the workspace, so a late one is still read exactly once.
-    | where ingestion_time() > ago(1h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
     | where ActionType in~ ("New-InboxRule", "Set-InboxRule", "Set-Mailbox")
     | mv-apply Parameter = RawEventData.Parameters on (
         summarize Settings = make_bag(bag_pack(tostring(Parameter.Name), tostring(Parameter.Value))))
@@ -41,10 +42,12 @@ let FromCmdlets = CloudAppEvents
 // Outlook desktop: one record per change, with the rule's actions as text.
 let FromOutlook = CloudAppEvents
     | where TimeGenerated > ago(4h)
-    | where ingestion_time() > ago(1h)
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
     | where ActionType =~ "UpdateInboxRules"
     | mv-apply Property = RawEventData.OperationProperties on (
         summarize Details = make_bag(bag_pack(tostring(Property.Name), tostring(Property.Value))))
+    // Removing a rule is not of interest, even when the record still lists what the rule did.
+    | where tostring(Details.RuleOperation) !~ "RemoveMailboxRule"
     | extend RuleActions = tostring(Details.RuleActions)
     | extend RuleName = tostring(Details.RuleName),
              ForwardTo = iff(RuleActions contains "Forward" or RuleActions contains "Redirect", RuleActions, ""),

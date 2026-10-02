@@ -184,20 +184,21 @@ SecurityAlert
 
 [[tab.item]]
 kind = "table"
-title = "Work closed by each owner"
+title = "Incidents closed in the time range, by owner"
 width = 50
 bars = ["Closed"]
 query = '''
 SecurityIncident
 | summarize arg_max(TimeGenerated, *) by IncidentNumber
-| where CreatedTime >= {TimeRange:start}
+// Whenever the incident was created: clearing old backlog counts as work done in the range.
+| where Status == "Closed" and ClosedTime >= {TimeRange:start}
 | extend AssignedTo = tostring(Owner.assignedTo)
 | where isnotempty(AssignedTo)
-| summarize Closed = countif(Status == "Closed"),
-            StillOpen = countif(Status != "Closed"),
-            HoursToClose = avgif((ClosedTime - CreatedTime) / 1h, Status == "Closed" and isnotnull(ClosedTime))
+| summarize Closed = count(),
+            TruePositives = countif(Classification == "TruePositive"),
+            HoursToClose = avg((ClosedTime - CreatedTime) / 1h)
             by AssignedTo
-| project AssignedTo, Closed, StillOpen, MeanHoursToClose = iff(isnan(HoursToClose), real(null), round(HoursToClose, 1))
+| project AssignedTo, Closed, TruePositives, MeanHoursToClose = round(HoursToClose, 1)
 | top 50 by Closed desc
 '''
 

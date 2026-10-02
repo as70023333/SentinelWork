@@ -32,7 +32,7 @@ Detections tab of the workbook for its area.
 | [EX-003](#ex-003) | Mass download from SharePoint or OneDrive | Medium | Collection, Exfiltration | `CloudAppEvents` | 1 hour | 14 days |
 | [EX-004](#ex-004) | Cloud copy or file transfer tool executed | Medium | Exfiltration | `DeviceProcessEvents` | 1 hour | 2 hours |
 | [SO-001](#so-001) | Log source stopped sending data | Medium | Operational | `Usage` | 6 hours | 7 days |
-| [SO-002](#so-002) | Analytics rule is failing to run | Medium | Operational | `SentinelHealth` | 1 hour | 2 hours |
+| [SO-002](#so-002) | Analytics rule is failing to run | Medium | Operational | `SentinelHealth` | 1 hour | 1 day |
 | [SO-003](#so-003) | High severity incident not picked up within 30 minutes | Medium | Operational | `SecurityIncident` | 30 minutes | 2 hours |
 | [SO-004](#so-004) | One rule is creating an excessive number of incidents | Low | Operational | `SecurityIncident` | 1 day | 1 day |
 
@@ -53,11 +53,11 @@ Source: [ID-001-password-spray-from-single-ip.kql](identity-sign-ins/ID-001-pass
 | Schedule | every 1 hour, reading the last 2 hours |
 | Entities | IP (IPAddress) |
 
-**What it finds.** One IP address failed to sign in to many different accounts within an hour: wrong password (error 50126), smart lockout (50053) or an account name that does not exist (50034). Trying a few common passwords against many accounts is a password spray; a user who forgot a password fails many times on one account instead. The alert also says whether any of the accounts that failed went on to sign in successfully from the same address.
+**What it finds.** One IP address failed to sign in to many different accounts within two hours: wrong password (error 50126), smart lockout (50053) or an account name that does not exist (50034). Trying a few common passwords against many accounts is a password spray; a user who forgot a password fails many times on one account instead. The alert also says whether any account the address failed on then signed in successfully from the same address.
 
 **False positives.** A shared egress address (office NAT, VPN, proxy) after a password-expiry wave or an outage that forces everyone to sign in again; some of those users will also show as successful, because they mistyped and then got it right. A misconfigured application with stale credentials fails on one account many times and does not reach the account threshold.
 
-**Tuning.** Lower MinAccounts for a small tenant. Add your own egress addresses to ExcludedIPs.
+**Tuning.** Lower MinAccounts for a small tenant. Add your own egress addresses to ExcludedIPs. A spray that continues is reported again each hour and joins the same incident.
 
 **Response.** Start with the accounts listed in SuccessfulAccounts: if the address is not yours, treat them as compromised, revoke sessions, reset the passwords and review their activity. Block the address and confirm smart lockout and the banned-password list are enabled.
 
@@ -316,7 +316,7 @@ Source: [EP-004-encoded-or-download-powershell.kql](endpoint-threats/EP-004-enco
 
 **What it finds.** PowerShell ran with a long Base64 encoded command, or downloaded content and ran it straight from memory or in a hidden window. Both keep the real script off disk and out of sight, which is why loaders and hands-on intruders use them.
 
-**False positives.** Management agents run encoded PowerShell all day. The common ones (Configuration Manager, Intune, Defender, Azure guest agents) are excluded when the parent process has one of their names and runs from a system or program folder; yours may differ.
+**False positives.** Management agents run encoded PowerShell all day. The common ones (Configuration Manager, Intune, Defender, Azure guest agents) are excluded when the parent process has one of their names and runs from that product's own installation folder; yours may differ.
 
 **Tuning.** Add your management tool's parent process to ManagementParents. Review the alerts for a week before raising the severity.
 
@@ -364,7 +364,7 @@ Source: [EM-002-phishing-delivered-to-multiple-recipients.kql](email-phishing/EM
 | Schedule | every 1 hour, reading the last 2 hours |
 | Entities | MailMessage (NetworkMessageId, SenderFromAddress, SenderIPv4) |
 
-**What it finds.** Inbound mail that Defender for Office 365 identified as phishing or malware was still delivered to mailboxes, and one sender reached several recipients within the hour. Delivery despite a verdict usually means an allow rule, a safe sender entry or a policy override let it in.
+**What it finds.** Inbound mail that Defender for Office 365 identified as phishing or malware was still delivered to mailboxes, and one sender reached several recipients within two hours. Delivery despite a verdict usually means an allow rule, a safe sender entry or a policy override let it in.
 
 **False positives.** A phishing simulation, or a trusted partner whose mail trips a detection and is allowed on purpose.
 
@@ -387,7 +387,7 @@ Source: [EM-003-inbox-rule-forwards-or-hides-mail.kql](email-phishing/EM-003-inb
 | Schedule | every 1 hour, reading the last 4 hours |
 | Entities | Account (UserUpn, AccountObjectId); IP (IPAddress) |
 
-**What it finds.** A mailbox rule was created or changed so that it forwards or redirects mail to another address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or Conversation History; or forwarding was switched on for the whole mailbox. After taking over a mailbox, an attacker does this to read the victim's mail and to hide the replies to the fraudulent messages they send. Rules made in Outlook on the web or PowerShell (New-InboxRule, Set-InboxRule, Set-Mailbox) and rules made in the Outlook desktop client (UpdateInboxRules) are both read. The rule reads four hours because this audit data can arrive more than an hour late.
+**What it finds.** A mailbox rule was created or changed so that it forwards or redirects mail to another address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or Conversation History; or forwarding was switched on for the whole mailbox. After taking over a mailbox, an attacker does this to read the victim's mail and to hide the replies to the fraudulent messages they send. Rules made in Outlook on the web or PowerShell (New-InboxRule, Set-InboxRule, Set-Mailbox) and rules made in the Outlook desktop client (UpdateInboxRules) are both read; for Outlook desktop the folder case depends on the record naming the folder, which has not been confirmed. The rule reads four hours because this audit data can arrive late.
 
 **False positives.** Users who forward to a personal or shared mailbox, and rules that file newsletters into Archive or delete notifications.
 
@@ -483,7 +483,7 @@ Source: [AZ-003-mass-resource-deletion.kql](azure-activity/AZ-003-mass-resource-
 | Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Caller); IP (CallerIpAddress) |
 
-**What it finds.** One caller deleted an unusually large number of Azure resources in an hour, counted across all subscriptions and addresses the caller used. A compromised administrator or a leaked service principal secret can destroy an environment this way, and it is also what an expensive mistake in a script looks like while it is still running.
+**What it finds.** One caller deleted an unusually large number of Azure resources within two hours, counted across all subscriptions and addresses the caller used. A compromised administrator or a leaked service principal secret can destroy an environment this way, and it is also what an expensive mistake in a script looks like while it is still running.
 
 **False positives.** Tearing down a test environment, a pipeline that recreates resources, and clean-up after a project ends.
 
@@ -533,7 +533,7 @@ Source: [EX-001-large-outbound-transfer.kql](insider-risk-exfiltration/EX-001-la
 | Schedule | every 1 hour, reading the last 2 hours |
 | Entities | IP (SourceIP); IP (DestinationIP); Account (SourceUser) |
 
-**What it finds.** According to the firewall, one internal address sent more than a gigabyte to a single internet address within an hour. Most traffic downloads more than it uploads, so a large upload to one place is worth a look whether it is a backup, a sync client or someone taking data out. Only IPv4 is evaluated.
+**What it finds.** According to the firewall, one internal address sent more than a gigabyte to a single internet address within two hours. Most traffic downloads more than it uploads, so a large upload to one place is worth a look whether it is a backup, a sync client or someone taking data out. Only IPv4 is evaluated.
 
 **False positives.** Cloud backup, file sync, video conferencing, software distribution and replication to a partner or another site over the internet. A firewall that also logs running totals for sessions still in progress makes the figure too high, because the same bytes are added twice.
 
@@ -556,7 +556,7 @@ Source: [EX-002-mass-copy-to-removable-media.kql](insider-risk-exfiltration/EX-0
 | Schedule | every 1 hour, reading the last 7 days |
 | Entities | Host (DeviceName); Account (AccountName, AccountDomain) |
 
-**What it finds.** A user created a large number of files on a USB drive within an hour. The rule pairs each new file with the USB drive that was most recently mounted on that drive letter, so internal drives and network shares are not counted and the alert names the right drive when a letter has been used by more than one.
+**What it finds.** A user created a large number of files on a USB drive within two hours. The rule pairs each new file with the USB drive that was most recently mounted on that drive letter, so internal drives and network shares are not counted and the alert names the right drive when a letter has been used by more than one.
 
 **False positives.** IT staff building installation media, photographers and engineers who work from external drives, and backups to a USB disk.
 
@@ -579,11 +579,11 @@ Source: [EX-003-mass-download-from-sharepoint-or-onedrive.kql](insider-risk-exfi
 | Schedule | every 1 hour, reading the last 14 days |
 | Entities | Account (UserUpn, AccountObjectId); IP (IPAddress) |
 
-**What it finds.** An account downloaded far more files from SharePoint or OneDrive than in any hour of the previous two weeks, and more than a fixed minimum. It is how a departing employee takes a team site with them and how an attacker with a stolen session collects what the account can reach. Downloads with no signed-in account (anonymous links) are not evaluated.
+**What it finds.** In one hour an account downloaded far more files from SharePoint or OneDrive than in any hour of the previous two weeks, and more than a fixed minimum. It is how a departing employee takes a team site with them and how an attacker with a stolen session collects what the account can reach. Downloads with no signed-in account (anonymous links) are not evaluated.
 
 **False positives.** A new laptop syncing a library for the first time, a migration or backup tool running as a user, and someone downloading a large project folder for legitimate work.
 
-**Tuning.** Change MinFiles and Multiplier. Exclude the migration or backup account. Combine with HR leaver data if you have it: the same alert means more for someone in their notice period.
+**Tuning.** Change MinFiles and Multiplier. Exclude the migration or backup account. Combine with HR leaver data if you have it: the same alert means more for someone in their notice period. While new records for the busy hour keep arriving, the alert repeats and joins the same incident.
 
 **Response.** Check the address and device against the user's normal ones. A new address suggests a stolen session (revoke it); a known device suggests the user, which is a conversation for their manager.
 
@@ -649,12 +649,12 @@ Source: [SO-002-analytics-rule-failing.kql](soc-operations/SO-002-analytics-rule
 | Severity | Medium |
 | MITRE ATT&CK | Operational rule, no tactic; techniques: none |
 | Tables | `SentinelHealth` |
-| Schedule | every 1 hour, reading the last 2 hours |
+| Schedule | every 1 hour, reading the last 1 day |
 | Entities | none |
 
-**What it finds.** A scheduled or near-real-time analytics rule failed more than once in the last hour. A rule that cannot run detects nothing, and Sentinel disables a rule automatically after repeated failures. Requires the health monitoring setting, which creates the SentinelHealth table.
+**What it finds.** A scheduled or near-real-time analytics rule has failed more than once in the last day and failed again since the last run of this rule. A rule that cannot run detects nothing, and Sentinel disables a rule automatically after repeated failures. Requires the health monitoring setting, which creates the SentinelHealth table. It is an operational rule and has no MITRE ATT&CK mapping.
 
-**False positives.** A short platform problem that resolves itself; the failures stop within the hour.
+**False positives.** A short platform problem that resolves itself; the failures stop and so does the alert.
 
 **Tuning.** Lower MinFailures to 1 if you want to hear about every failed run.
 
