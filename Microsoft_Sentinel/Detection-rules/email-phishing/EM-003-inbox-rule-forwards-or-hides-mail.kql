@@ -1,0 +1,64 @@
+// Title: Inbox rule or mailbox setting that forwards, deletes or hides mail
+// Id: EM-003
+// Severity: Medium
+// Tactics: Collection, DefenseEvasion
+// Techniques: T1114, T1564
+// Sub-techniques: T1114.003, T1564.008
+// Tables: CloudAppEvents
+// Frequency: PT1H
+// Period: PT4H
+// Entities: Account(FullName=UserUpn, AadUserId=AccountObjectId); IP(Address=IPAddress)
+// Custom details: RuleName, Reason, ForwardTo, MoveToFolder, Operation
+// Description: A mailbox rule was created or changed so that it forwards or redirects mail to another
+//   address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or
+//   Conversation History; or forwarding was switched on for the whole mailbox. After taking over a
+//   mailbox, an attacker does this to read the victim's mail and to hide the replies to the
+//   fraudulent messages they send. Rules made in Outlook on the web or PowerShell (New-InboxRule,
+//   Set-InboxRule, Set-Mailbox) and rules made in the Outlook desktop client (UpdateInboxRules) are
+//   both read; for Outlook desktop the folder case depends on the record naming the folder, which
+//   has not been confirmed. The rule reads four hours because this audit data can arrive late.
+// False positives: Users who forward to a personal or shared mailbox, and rules that file newsletters
+//   into Archive or delete notifications.
+// Tuning: Block automatic external forwarding in the outbound spam policy. Remove "Archive" from
+//   HidingFolders if it is too noisy in your organisation.
+// Response: Open the rule (RuleName) in the mailbox. If the user did not create it, remove it, revoke
+//   sessions, reset the password and review sign-ins from the address that created the rule.
+// References: https://learn.microsoft.com/defender-xdr/alert-grading-playbook-inbox-manipulation-rules
+let HidingFolders = dynamic(["RSS", "Conversation History", "Archive", "Junk", "Deleted Items", "Notes"]);
+// Outlook on the web and PowerShell: the settings are cmdlet parameters.
+let FromCmdlets = CloudAppEvents
+    | where TimeGenerated > ago(4h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where ActionType in~ ("New-InboxRule", "Set-InboxRule", "Set-Mailbox")
+    | mv-apply Parameter = RawEventData.Parameters on (
+        summarize Settings = make_bag(bag_pack(tostring(Parameter.Name), tostring(Parameter.Value))))
+    | extend RuleName = coalesce(tostring(Settings.Name), tostring(Settings.Identity)),
+             ForwardTo = coalesce(tostring(Settings.ForwardTo), tostring(Settings.ForwardAsAttachmentTo),
+                                  tostring(Settings.RedirectTo), tostring(Settings.ForwardingSmtpAddress),
+                                  tostring(Settings.ForwardingAddress)),
+             MoveToFolder = tostring(Settings.MoveToFolder),
+             DeletesMail = tostring(Settings.DeleteMessage) =~ "True" or tostring(Settings.SoftDeleteMessage) =~ "True";
+// Outlook desktop: one record per change, with the rule's actions as text.
+let FromOutlook = CloudAppEvents
+    | where TimeGenerated > ago(4h)
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where ActionType =~ "UpdateInboxRules"
+    | mv-apply Property = RawEventData.OperationProperties on (
+        summarize Details = make_bag(bag_pack(tostring(Property.Name), tostring(Property.Value))))
+    // Removing a rule is not of interest, even when the record still lists what the rule did.
+    | where tostring(Details.RuleOperation) !~ "RemoveMailboxRule"
+    | extend RuleActions = tostring(Details.RuleActions)
+    | extend RuleName = tostring(Details.RuleName),
+             ForwardTo = iff(RuleActions contains "Forward" or RuleActions contains "Redirect", RuleActions, ""),
+             MoveToFolder = iff(RuleActions contains "MoveToFolder", RuleActions, ""),
+             DeletesMail = RuleActions contains "Delete";
+union FromCmdlets, FromOutlook
+| extend Reason = case(isnotempty(ForwardTo), "Forwards or redirects mail",
+                       DeletesMail, "Deletes matching mail",
+                       MoveToFolder has_any (HidingFolders), "Moves mail to a folder that is rarely read",
+                       "")
+| where isnotempty(Reason)
+| project TimeGenerated, UserUpn = tostring(RawEventData.UserId), AccountObjectId, AccountDisplayName, IPAddress,
+          CountryCode, Operation = ActionType, RuleName, Reason, ForwardTo = substring(ForwardTo, 0, 500),
+          MoveToFolder = substring(MoveToFolder, 0, 500), UserAgent

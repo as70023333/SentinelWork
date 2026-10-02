@@ -1,0 +1,37 @@
+// Title: One rule is creating an excessive number of incidents
+// Id: SO-004
+// Severity: Low
+// Tables: SecurityIncident
+// Frequency: P1D
+// Period: P1D
+// Incidents: CustomDetails(IncidentTitle), P1D
+// Custom details: IncidentTitle, Incidents, FalsePositivePercent, ClosedByAgent
+// Description: Incidents with the same title were created many times in the last day. A noisy rule
+//   costs analyst time, trains people to ignore it and can hide a real incident among the copies.
+//   The alert shows how many of them were closed as false or benign positives and how many the
+//   Autonomous SOC Analyst closed on its own, which is the evidence for tuning the rule.
+// False positives: A real, widespread event such as a phishing campaign or a worm produces many
+//   genuine incidents with one title. Check the classifications before tuning anything.
+// Tuning: Change MaxPerDay to what your team considers too many.
+// Response: Open the rule behind the title. Add an exclusion for the benign pattern, raise its
+//   threshold, or switch on alert grouping so one event becomes one incident.
+// References: https://learn.microsoft.com/azure/sentinel/false-positives
+let MaxPerDay = 30;
+SecurityIncident
+| where TimeGenerated > ago(1d)
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where CreatedTime > ago(1d)
+| where Title != "One rule is creating an excessive number of incidents"
+| summarize Incidents = count(),
+            Closed = countif(Status == "Closed"),
+            FalsePositives = countif(Classification in ("FalsePositive", "BenignPositive")),
+            TruePositives = countif(Classification == "TruePositive"),
+            ClosedByAgent = countif(tostring(Labels) has "soc-agent:auto_close"),
+            Severities = make_set(Severity, 4),
+            FirstIncident = min(CreatedTime),
+            LastIncident = max(CreatedTime)
+            by IncidentTitle = Title
+| where Incidents >= MaxPerDay
+| extend FalsePositivePercent = round(100.0 * FalsePositives / Incidents, 1)
+| project FirstIncident, LastIncident, IncidentTitle, Incidents, Closed, TruePositives, FalsePositives,
+          FalsePositivePercent, ClosedByAgent, Severities

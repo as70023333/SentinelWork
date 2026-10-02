@@ -1,0 +1,36 @@
+// Title: Office application started a script interpreter
+// Id: EP-003
+// Severity: High
+// Tactics: Execution, InitialAccess
+// Techniques: T1059, T1204, T1566
+// Sub-techniques: T1204.002, T1566.001
+// Tables: DeviceProcessEvents
+// Frequency: PT1H
+// Period: PT2H
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine)
+// Custom details: OfficeApplication, FileName, Executions
+// Description: Word, Excel, PowerPoint, Outlook or another Office program started PowerShell, a script
+//   host or a Windows tool that can download and run code. A document does not need to do that; a
+//   malicious attachment or macro does.
+// False positives: Add-ins and document automation that shell out, for example a finance macro that
+//   calls cmd.exe. They show the same command line on many devices, day after day.
+// Tuning: Exclude a known add-in by its exact command line. The Defender attack surface reduction
+//   rule "Block all Office applications from creating child processes" prevents the behaviour outright.
+// Response: Find the document (the Office command line usually names it) and the mail it came from.
+//   Isolate the device if the child process reached the internet or wrote files.
+// References: https://learn.microsoft.com/defender-endpoint/attack-surface-reduction-rules-reference
+let ExcludedCommandLines = dynamic([]);
+DeviceProcessEvents
+| where TimeGenerated > ago(2h)
+// Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+| where InitiatingProcessFileName in~ ("winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe", "onenote.exe",
+                                       "mspub.exe", "msaccess.exe", "visio.exe")
+| where FileName in~ ("powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe",
+                      "rundll32.exe", "regsvr32.exe", "certutil.exe", "bitsadmin.exe", "msbuild.exe")
+| where ProcessCommandLine !in~ (ExcludedCommandLines)
+| summarize Executions = count(),
+            arg_min(TimeGenerated, AccountName, AccountDomain, FolderPath, InitiatingProcessCommandLine, ReportId)
+            by DeviceName, DeviceId, OfficeApplication = InitiatingProcessFileName, FileName, ProcessCommandLine
+| project TimeGenerated, DeviceName, DeviceId, AccountName, AccountDomain, OfficeApplication, FileName,
+          ProcessCommandLine, Executions, OfficeCommandLine = InitiatingProcessCommandLine, ReportId

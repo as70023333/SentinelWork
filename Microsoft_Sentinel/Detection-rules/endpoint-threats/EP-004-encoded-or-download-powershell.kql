@@ -1,0 +1,57 @@
+// Title: PowerShell with an encoded command or an in-memory download
+// Id: EP-004
+// Severity: Medium
+// Tactics: Execution, DefenseEvasion, CommandAndControl
+// Techniques: T1059, T1027, T1105
+// Sub-techniques: T1059.001
+// Tables: DeviceProcessEvents
+// Frequency: PT1H
+// Period: PT2H
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine)
+// Custom details: Reason, InitiatingProcess, Executions
+// Description: PowerShell ran with a long Base64 encoded command, or downloaded content and ran it
+//   straight from memory or in a hidden window. Both keep the real script off disk and out of sight,
+//   which is why loaders and hands-on intruders use them.
+// False positives: Management agents run encoded PowerShell all day. The common ones (Configuration
+//   Manager, Intune, Defender, Azure guest agents) are excluded when the parent process has one of
+//   their names and runs from that product's own installation folder; yours may differ.
+// Tuning: Add your management tool's parent process to ManagementParents. Review the alerts for a
+//   week before raising the severity.
+// Response: Decode the command (the rule shows it in full). If it downloads from an address you do
+//   not know, isolate the device and look for the same address on other devices.
+// References: https://attack.mitre.org/techniques/T1059/001/
+let ManagementParents = dynamic(["ccmexec.exe", "agentexecutor.exe", "microsoft.management.services.intunewindowsagent.exe",
+                                 "senseir.exe", "sensecm.exe", "gc_worker.exe", "gc_service.exe", "monitoringhost.exe",
+                                 "windowsazureguestagent.exe", "waappagent.exe"]);
+DeviceProcessEvents
+| where TimeGenerated > ago(2h)
+// Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+| where FileName in~ ("powershell.exe", "pwsh.exe", "powershell_ise.exe")
+// A management parent is trusted only from the folder its product installs to, which a standard
+// user cannot write to, so a loader that merely borrows the file name is not excluded. The two Azure
+// agent folders sit at the root of the drive, so there the parent must also run as SYSTEM.
+| extend InstalledParent = InitiatingProcessFolderPath matches regex @"(?i)^c:\\(windows\\ccm|program files \(x86\)\\microsoft intune management extension|program files\\(windows defender advanced threat protection|microsoft monitoring agent\\agent|azureconnectedmachineagent)|programdata\\microsoft\\windows defender advanced threat protection\\platform)\\",
+         AzureAgentParent = InitiatingProcessFolderPath matches regex @"(?i)^c:\\(packages\\plugins\\microsoft\.|windowsazure\\)"
+                            and InitiatingProcessAccountSid == "S-1-5-18"
+| extend ManagedParent = InitiatingProcessFileName in~ (ManagementParents)
+        and (InstalledParent or AzureAgentParent)
+        and InitiatingProcessFolderPath !contains ".."
+| where not(ManagedParent)
+// -e, -ec, -enc ... -encodedcommand, with -, / or a typographic dash, then 40 or more Base64 characters.
+| extend Encoded = ProcessCommandLine matches regex @"(?i)\s[-/\x{2013}\x{2014}\x{2015}]e(c|nc?o?d?e?d?c?o?m?m?a?n?d?)?\s+[""']?[a-z0-9+/=]{40,}",
+         Download = ProcessCommandLine has_any ("DownloadString", "DownloadFile", "DownloadData", "Net.WebClient",
+                                                "Net.Http.HttpClient", "Invoke-WebRequest", "Invoke-RestMethod",
+                                                "Start-BitsTransfer", "iwr", "irm", "curl", "wget"),
+         RunsInMemory = ProcessCommandLine has_any ("IEX", "Invoke-Expression", "FromBase64String"),
+         HiddenWindow = ProcessCommandLine matches regex @"(?i)\s[-/\x{2013}\x{2014}\x{2015}]w(i(n(d(o(w(s(t(y(le?)?)?)?)?)?)?)?)?)?\s+[""']?(h(i(d(d(en?)?)?)?)?|1)\b"
+| extend Reason = case(Encoded, "Encoded command",
+                       Download and RunsInMemory, "Download run from memory",
+                       Download and HiddenWindow, "Download in a hidden window",
+                       "")
+| where isnotempty(Reason)
+| summarize Executions = count(),
+            arg_min(TimeGenerated, AccountName, AccountDomain, InitiatingProcessFileName, InitiatingProcessCommandLine, ReportId)
+            by DeviceName, DeviceId, Reason, ProcessCommandLine
+| project TimeGenerated, DeviceName, DeviceId, AccountName, AccountDomain, Reason, ProcessCommandLine, Executions,
+          InitiatingProcess = InitiatingProcessFileName, InitiatingProcessCommandLine, ReportId

@@ -1,0 +1,203 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspace": {
+      "type": "String",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace that Microsoft Sentinel is enabled on."
+      }
+    }
+  },
+  "resources": [
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/8204712f-689f-5cbc-acfd-610ef64f7607')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/8204712f-689f-5cbc-acfd-610ef64f7607')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Log source stopped sending data",
+        "description": "A table that the detection rules depend on received data on most of the last seven days and has received nothing for several hours. Every rule that reads the table is blind until it is fixed, and nothing else will tell you, because a rule with no data raises no alerts. It is an operational rule and has no MITRE ATT&CK mapping, although an attacker who switches off logging causes the same alert.\n\nFalse positives: A source that is quiet out of hours (email on a public holiday), a planned connector change, or a table you list in WatchedTables but only use occasionally.\n\nResponse: Open the data connector page for the source, check its health and any recent change to the connector, agent, diagnostic setting or data collection rule.\n\nSource: SentinelWork rule SO-001.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let WatchedTables = dynamic([\"SigninLogs\", \"AuditLogs\", \"AzureActivity\", \"CommonSecurityLog\", \"Syslog\",\n                             \"DeviceProcessEvents\", \"DeviceFileEvents\", \"DeviceEvents\", \"EmailEvents\",\n                             \"UrlClickEvents\", \"CloudAppEvents\"]);\nlet QuietHours = 6;\nUsage\n| where TimeGenerated > ago(7d)\n| where DataType in (WatchedTables)\n| summarize LastRecord = max(TimeGenerated),\n            ActiveDays = dcount(bin(TimeGenerated, 1d)),\n            AverageDailyMB = round(sum(Quantity) / 7.0, 1)\n            by DataType\n| where ActiveDays >= 5\n| extend HoursSilent = toint((now() - LastRecord) / 1h)\n| where HoursSilent >= QuietHours\n| project DataType, LastRecord, HoursSilent, ActiveDays, AverageDailyMB",
+        "queryFrequency": "PT6H",
+        "queryPeriod": "P7D",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [],
+        "techniques": [],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "Selected",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": [
+              "DataType"
+            ]
+          }
+        },
+        "customDetails": {
+          "DataType": "DataType",
+          "HoursSilent": "HoursSilent",
+          "LastRecord": "LastRecord",
+          "AverageDailyMB": "AverageDailyMB"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/45522bae-6442-5b82-af7d-ff4e08bf9a80')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/45522bae-6442-5b82-af7d-ff4e08bf9a80')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Analytics rule is failing to run",
+        "description": "A scheduled or near-real-time analytics rule has failed more than once in the last day and failed again since the last run of this rule. A rule that cannot run detects nothing, and Sentinel disables a rule automatically after repeated failures. Requires the health monitoring setting, which creates the SentinelHealth table. It is an operational rule and has no MITRE ATT&CK mapping.\n\nFalse positives: A short platform problem that resolves itself; the failures stop and so does the alert.\n\nResponse: Read Reason. The usual causes are a table that no longer exists, a query that times out, or a permission removed from a rule that reads another workspace. Fix it and re-enable the rule if Sentinel disabled it.\n\nSource: SentinelWork rule SO-002.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let MinFailures = 2;\nlet Touched = SentinelHealth\n    | where TimeGenerated > ago(1d)\n    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)\n    | where SentinelResourceType =~ \"Analytics Rule\" and Status =~ \"Failure\"\n    | distinct SentinelResourceId;\nSentinelHealth\n| where TimeGenerated > ago(1d)\n| where SentinelResourceType =~ \"Analytics Rule\" and Status =~ \"Failure\"\n| where SentinelResourceId in (Touched)\n| summarize Failures = count(),\n            FirstFailure = min(TimeGenerated),\n            LastFailure = max(TimeGenerated),\n            Reason = take_any(Reason),\n            Details = take_any(Description)\n            by RuleName = SentinelResourceName, RuleResourceId = SentinelResourceId, RuleKind = SentinelResourceKind\n| where Failures >= MinFailures\n| project FirstFailure, LastFailure, RuleName, RuleKind, Failures, Reason, Details, RuleResourceId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "P1D",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [],
+        "techniques": [],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "Selected",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": [
+              "RuleName"
+            ]
+          }
+        },
+        "customDetails": {
+          "RuleName": "RuleName",
+          "Failures": "Failures",
+          "Reason": "Reason",
+          "RuleKind": "RuleKind"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/1ebfe3aa-7f02-57eb-9276-6a981436c750')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/1ebfe3aa-7f02-57eb-9276-6a981436c750')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "High severity incident not picked up within 30 minutes",
+        "description": "A high severity incident is still in status New, has no owner and has not been touched by the Autonomous SOC Analyst (no soc-agent label) half an hour after it was created. It is the safety net for the night shift: if both the agent and the on-call analyst miss an incident, this says so while it still matters.\n\nFalse positives: None in the usual sense. If it fires often, the queue is under-staffed or the agent is not running.\n\nResponse: Assign the incident now. Then find out why it was missed: check that the agent's automation rule and playbook ran, and who was on call.\n\nSource: SentinelWork rule SO-003.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "SecurityIncident\n| where TimeGenerated > ago(2h)\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Severity == \"High\" and Status == \"New\"\n| where CreatedTime between (ago(60m) .. ago(30m))\n| where isempty(tostring(Owner.assignedTo)) and isempty(tostring(Owner.userPrincipalName))\n| where tostring(Labels) !has \"soc-agent\"\n| where Title != \"High severity incident not picked up within 30 minutes\"\n| project CreatedTime, IncidentNumber, IncidentTitle = Title, Severity, Status,\n          MinutesOpen = toint((now() - CreatedTime) / 1m), Provider = ProviderName, IncidentUrl",
+        "queryFrequency": "PT30M",
+        "queryPeriod": "PT2H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [],
+        "techniques": [],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "URL",
+            "fieldMappings": [
+              {
+                "identifier": "Url",
+                "columnName": "IncidentUrl"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "IncidentNumber": "IncidentNumber",
+          "IncidentTitle": "IncidentTitle",
+          "MinutesOpen": "MinutesOpen",
+          "Provider": "Provider"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/007a92c7-8c46-5371-b632-852f6df62c25')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/007a92c7-8c46-5371-b632-852f6df62c25')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "One rule is creating an excessive number of incidents",
+        "description": "Incidents with the same title were created many times in the last day. A noisy rule costs analyst time, trains people to ignore it and can hide a real incident among the copies. The alert shows how many of them were closed as false or benign positives and how many the Autonomous SOC Analyst closed on its own, which is the evidence for tuning the rule.\n\nFalse positives: A real, widespread event such as a phishing campaign or a worm produces many genuine incidents with one title. Check the classifications before tuning anything.\n\nResponse: Open the rule behind the title. Add an exclusion for the benign pattern, raise its threshold, or switch on alert grouping so one event becomes one incident.\n\nSource: SentinelWork rule SO-004.",
+        "severity": "Low",
+        "enabled": false,
+        "query": "let MaxPerDay = 30;\nSecurityIncident\n| where TimeGenerated > ago(1d)\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where CreatedTime > ago(1d)\n| where Title != \"One rule is creating an excessive number of incidents\"\n| summarize Incidents = count(),\n            Closed = countif(Status == \"Closed\"),\n            FalsePositives = countif(Classification in (\"FalsePositive\", \"BenignPositive\")),\n            TruePositives = countif(Classification == \"TruePositive\"),\n            ClosedByAgent = countif(tostring(Labels) has \"soc-agent:auto_close\"),\n            Severities = make_set(Severity, 4),\n            FirstIncident = min(CreatedTime),\n            LastIncident = max(CreatedTime)\n            by IncidentTitle = Title\n| where Incidents >= MaxPerDay\n| extend FalsePositivePercent = round(100.0 * FalsePositives / Incidents, 1)\n| project FirstIncident, LastIncident, IncidentTitle, Incidents, Closed, TruePositives, FalsePositives,\n          FalsePositivePercent, ClosedByAgent, Severities",
+        "queryFrequency": "P1D",
+        "queryPeriod": "P1D",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [],
+        "techniques": [],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "Selected",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": [
+              "IncidentTitle"
+            ]
+          }
+        },
+        "customDetails": {
+          "IncidentTitle": "IncidentTitle",
+          "Incidents": "Incidents",
+          "FalsePositivePercent": "FalsePositivePercent",
+          "ClosedByAgent": "ClosedByAgent"
+        }
+      }
+    }
+  ]
+}

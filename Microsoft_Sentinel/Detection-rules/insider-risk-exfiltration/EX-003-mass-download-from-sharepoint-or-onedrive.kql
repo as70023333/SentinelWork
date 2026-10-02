@@ -1,0 +1,61 @@
+// Title: Mass download from SharePoint or OneDrive
+// Id: EX-003
+// Severity: Medium
+// Tactics: Collection, Exfiltration
+// Techniques: T1530, T1213, T1567
+// Sub-techniques: T1213.002
+// Tables: CloudAppEvents
+// Frequency: PT1H
+// Period: P14D
+// Entities: Account(FullName=UserUpn, AadUserId=AccountObjectId); IP(Address=IPAddress)
+// Custom details: Files, BaselineMaxPerHour, Sites, BusiestHour
+// Description: In one hour an account downloaded far more files from SharePoint or OneDrive than in
+//   any hour of the previous two weeks, and more than a fixed minimum. It is how a departing employee
+//   takes a team site with them and how an attacker with a stolen session collects what the account
+//   can reach. Downloads with no signed-in account (anonymous links) are not evaluated.
+// False positives: A new laptop syncing a library for the first time, a migration or backup tool
+//   running as a user, and someone downloading a large project folder for legitimate work.
+// Tuning: Change MinFiles and Multiplier. Exclude the migration or backup account. Combine with HR
+//   leaver data if you have it: the same alert means more for someone in their notice period. While
+//   new records for the busy hour keep arriving, the alert repeats and joins the same incident.
+// Response: Check the address and device against the user's normal ones. A new address suggests a
+//   stolen session (revoke it); a known device suggests the user, which is a conversation for their
+//   manager.
+// References: https://learn.microsoft.com/purview/audit-log-activities
+let MinFiles = 200;
+let Multiplier = 3;
+let Baseline = CloudAppEvents
+    | where TimeGenerated between (ago(14d) .. ago(4h))
+    | where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull")
+    | where Application has_any ("SharePoint", "OneDrive") and isnotempty(AccountObjectId)
+    | summarize HourlyFiles = dcount(ObjectName) by AccountObjectId, bin(TimeGenerated, 1h)
+    | summarize BaselineMaxPerHour = max(HourlyFiles) by AccountObjectId;
+// Accounts with a download that reached the workspace since the last run. This audit data can
+// arrive more than an hour late, so four hours are read.
+let Touched = CloudAppEvents
+    | where TimeGenerated > ago(4h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull")
+    | where Application has_any ("SharePoint", "OneDrive") and isnotempty(AccountObjectId)
+    | distinct AccountObjectId;
+CloudAppEvents
+| where TimeGenerated > ago(4h)
+| where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull")
+| where Application has_any ("SharePoint", "OneDrive") and AccountObjectId in (Touched)
+// Count per clock hour, the same way the baseline is counted, and keep each account's busiest hour.
+| summarize Files = dcount(ObjectName),
+            Sites = strcat_array(make_set(tostring(RawEventData.SiteUrl), 10), ", "),
+            FileSample = make_set(ObjectName, 15),
+            IPAddress = take_any(IPAddress),
+            Countries = make_set(CountryCode, 5),
+            UserUpn = take_any(tostring(RawEventData.UserId)),
+            AccountDisplayName = take_any(AccountDisplayName)
+            by AccountObjectId, BusiestHour = bin(TimeGenerated, 1h)
+| summarize arg_max(Files, *) by AccountObjectId
+| where Files >= MinFiles
+| join kind=leftouter Baseline on AccountObjectId
+| extend BaselineMaxPerHour = coalesce(BaselineMaxPerHour, 0)
+| where Files > Multiplier * BaselineMaxPerHour
+| project BusiestHour, UserUpn, AccountDisplayName, AccountObjectId, IPAddress, Countries, Files,
+          BaselineMaxPerHour, Sites, FileSample

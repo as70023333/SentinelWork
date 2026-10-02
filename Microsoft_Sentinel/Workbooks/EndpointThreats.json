@@ -1,0 +1,828 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Endpoint Threats\n\nDefender for Endpoint telemetry from the devices, in two halves. **Overview** is what the product\nalready acted on: antivirus detections, attack surface reduction (ASR) rules and network protection.\n**Hunting** is behaviour that is not blocked and is often legitimate, but is where an intruder shows\nup first: Windows tools that download or run code, new autorun entries, and logon failures from one\naddress against many accounts.\n\nThe **Linux** tab reads `Syslog` and stays empty if you do not collect it.\n\n**Tables read:** `DeviceEvents`, `DeviceProcessEvents`, `DeviceNetworkEvents`, `DeviceRegistryEvents`, `DeviceLogonEvents` and, when present, `Syslog`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "72aafe10-b419-598f-9062-56e6b0fce65e",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "0ce4edea-7d28-5055-8297-4fa881d5b0f6",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "Overview",
+            "style": "link"
+          },
+          {
+            "id": "bcc5feb4-28ea-5858-8584-dc477ecef860",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Hunting",
+            "subTarget": "Hunting",
+            "style": "link"
+          },
+          {
+            "id": "1f9801a6-2667-567a-9944-799d6e230ce5",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Linux",
+            "subTarget": "Linux",
+            "style": "link"
+          },
+          {
+            "id": "06934efa-d877-5a5c-82ae-a151b8b70836",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceEvents\r\n| summarize Devices = dcount(DeviceId),\r\n            Detections = countif(ActionType == \"AntivirusDetection\"),\r\n            DevicesWithDetection = dcountif(DeviceId, ActionType == \"AntivirusDetection\"),\r\n            AsrBlocked = countif(ActionType startswith \"Asr\" and ActionType endswith \"Blocked\"),\r\n            AsrAudited = countif(ActionType startswith \"Asr\" and ActionType endswith \"Audited\"),\r\n            NetworkBlocked = countif(ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\")),\r\n            Tampering = countif(ActionType == \"TamperingAttempt\")\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Devices reporting\", \"Value\", Devices),\r\n    bag_pack(\"Metric\", \"Antivirus detections\", \"Value\", Detections),\r\n    bag_pack(\"Metric\", \"Devices with a detection\", \"Value\", DevicesWithDetection),\r\n    bag_pack(\"Metric\", \"ASR rule blocks\", \"Value\", AsrBlocked),\r\n    bag_pack(\"Metric\", \"ASR rule audits (not blocked)\", \"Value\", AsrAudited),\r\n    bag_pack(\"Metric\", \"Web and network protection blocks and warnings\", \"Value\", NetworkBlocked),\r\n    bag_pack(\"Metric\", \"Tampering attempts\", \"Value\", Tampering))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "size": 4,
+              "title": "Protection events in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceEvents\r\n| extend Event = case(\r\n    ActionType == \"AntivirusDetection\", \"Antivirus detection\",\r\n    ActionType startswith \"Asr\" and ActionType endswith \"Blocked\", \"ASR block\",\r\n    ActionType startswith \"Asr\" and ActionType endswith \"Audited\", \"ASR audit\",\r\n    ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\"), \"Web or network block or warning\",\r\n    ActionType == \"TamperingAttempt\", \"Tampering attempt\",\r\n    \"\")\r\n| where isnotempty(Event)\r\n| summarize Events = count() by bin(TimeGenerated, {TimeRange:grain}), Event",
+              "size": 0,
+              "title": "Protection events over time",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceEvents\r\n| where ActionType == \"AntivirusDetection\"\r\n| extend Fields = parse_json(tostring(AdditionalFields))\r\n| summarize Detections = count(),\r\n            Devices = dcount(DeviceId),\r\n            ExampleFile = take_any(FileName),\r\n            LastSeen = max(TimeGenerated)\r\n            by Threat = tostring(Fields.ThreatName)\r\n| top 50 by Detections desc",
+              "size": 0,
+              "title": "Antivirus detections by threat",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Detections",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "overview-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceEvents\r\n| where ActionType startswith \"Asr\"\r\n| extend AsrRule = replace_regex(ActionType, @\"(Blocked|Audited|WarnBypassed)$\", \"\")\r\n| summarize Blocked = countif(ActionType endswith \"Blocked\"),\r\n            Audited = countif(ActionType endswith \"Audited\"),\r\n            WarningBypassed = countif(ActionType endswith \"WarnBypassed\"),\r\n            Devices = dcount(DeviceId),\r\n            LastSeen = max(TimeGenerated)\r\n            by AsrRule\r\n| order by Blocked desc, Audited desc",
+              "size": 0,
+              "title": "Attack surface reduction rules that fired",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Blocked",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "Audited",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "overview-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceEvents\r\n| where ActionType == \"AntivirusDetection\" or ActionType startswith \"Asr\"\r\n    or ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\", \"TamperingAttempt\")\r\n| summarize Events = count(),\r\n            Detections = countif(ActionType == \"AntivirusDetection\"),\r\n            EventTypes = strcat_array(make_set(ActionType, 8), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Device = DeviceName\r\n| top 25 by Events desc",
+              "size": 0,
+              "title": "Devices with the most protection events",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Events",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Nothing on this tab is an alert. Sort by **Devices**: a tool used on one or two devices, or by an\naccount that is not an administrator, deserves a look before one used everywhere every day."
+            },
+            "customWidth": "100",
+            "name": "hunting-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceProcessEvents\r\n| where FileName in~ (\"certutil.exe\", \"mshta.exe\", \"regsvr32.exe\", \"rundll32.exe\", \"bitsadmin.exe\", \"wscript.exe\",\r\n                      \"cscript.exe\", \"msbuild.exe\", \"installutil.exe\", \"wmic.exe\", \"psexec.exe\", \"psexesvc.exe\")\r\n| summarize Executions = count(),\r\n            Devices = dcount(DeviceId),\r\n            Accounts = dcount(AccountName),\r\n            ExampleCommand = take_any(ProcessCommandLine),\r\n            LastSeen = max(TimeGenerated)\r\n            by Tool = tolower(FileName)\r\n| order by Devices asc, Executions desc",
+              "size": 0,
+              "title": "Windows tools that can download or run code",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Executions",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "hunting-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceNetworkEvents\r\n| where RemoteIPType == \"Public\"\r\n| where InitiatingProcessFileName in~ (\"powershell.exe\", \"pwsh.exe\", \"wscript.exe\", \"cscript.exe\", \"mshta.exe\",\r\n                                       \"rundll32.exe\", \"regsvr32.exe\", \"certutil.exe\", \"bitsadmin.exe\", \"msbuild.exe\")\r\n| summarize Connections = count(),\r\n            Devices = dcount(DeviceId),\r\n            LastSeen = max(TimeGenerated)\r\n            by Process = tolower(InitiatingProcessFileName), Destination = iff(isnotempty(RemoteUrl), RemoteUrl, RemoteIP)\r\n| top 100 by Devices asc",
+              "size": 0,
+              "title": "Script hosts and system tools connecting to the internet",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Connections",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "hunting-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceRegistryEvents\r\n| where ActionType == \"RegistryValueSet\"\r\n| where RegistryKey matches regex @\"(?i)\\\\CurrentVersion\\\\Run(Once)?$\"\r\n| summarize Devices = dcount(DeviceId),\r\n            FirstSeen = min(TimeGenerated),\r\n            LastSeen = max(TimeGenerated),\r\n            SetBy = take_any(InitiatingProcessFileName),\r\n            ExampleDevice = take_any(DeviceName)\r\n            by ValueName = RegistryValueName, Program = RegistryValueData\r\n| order by Devices asc, LastSeen desc\r\n| take 250",
+              "size": 0,
+              "title": "Programs set to run at sign-in (Run and RunOnce keys)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "hunting-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceLogonEvents\r\n| where ActionType == \"LogonFailed\" and isnotempty(RemoteIP)\r\n| where LogonType in (\"Network\", \"RemoteInteractive\")\r\n| summarize Failures = count(),\r\n            Accounts = dcount(AccountName),\r\n            Devices = dcount(DeviceId),\r\n            AddressType = take_any(RemoteIPType),\r\n            LastSeen = max(TimeGenerated)\r\n            by Source = RemoteIP\r\n| where Failures >= 10\r\n| top 50 by Failures desc",
+              "size": 0,
+              "title": "Remote logon failures by source address",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Failures",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  },
+                  {
+                    "columnMatch": "Accounts",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "hunting-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Hunting"
+      },
+      "name": "tab-hunting"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union isfuzzy=true\r\n    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),\r\n    (Syslog)\r\n| where Facility in (\"auth\", \"authpriv\") and SyslogMessage has \"Failed password\"\r\n| extend Source = extract(@\"from (\\S+) port\", 1, SyslogMessage),\r\n         Account = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\r\n| summarize Failures = count(),\r\n            Accounts = dcount(Account),\r\n            Hosts = dcount(Computer),\r\n            LastSeen = max(TimeGenerated)\r\n            by Source\r\n| top 50 by Failures desc",
+              "size": 0,
+              "title": "SSH password failures by source address",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Failures",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "linux-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union isfuzzy=true\r\n    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),\r\n    (Syslog)\r\n| where ProcessName == \"sudo\" and SyslogMessage has \"COMMAND=\"\r\n| extend Account = extract(@\"^\\s*(\\S+)\\s*:\", 1, SyslogMessage),\r\n         Command = extract(@\"COMMAND=(.*)$\", 1, SyslogMessage)\r\n| summarize Runs = count(), LastSeen = max(TimeGenerated) by Host = Computer, Account, Command\r\n| top 100 by Runs desc",
+              "size": 0,
+              "title": "Commands run with sudo",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Runs",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "linux-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Linux"
+      },
+      "name": "tab-linux"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"EP-001\", \"Credential dumping from LSASS or the registry\", \"High\", \"CredentialAccess\",\r\n    \"EP-002\", \"Shadow copies or recovery options deleted\", \"High\", \"Impact\",\r\n    \"EP-003\", \"Office application started a script interpreter\", \"High\", \"Execution, InitialAccess\",\r\n    \"EP-004\", \"PowerShell with an encoded command or an in-memory download\", \"Medium\", \"Execution, DefenseEvasion, CommandAndControl\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Credential dumping from LSASS or the registry\", \"Shadow copies or recovery options deleted\", \"Office application started a script interpreter\", \"PowerShell with an encoded command or an in-memory download\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Credential dumping from LSASS or the registry\", \"Shadow copies or recovery options deleted\", \"Office application started a script interpreter\", \"PowerShell with an encoded command or an in-memory download\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Credential dumping from LSASS or the registry\", \"Shadow copies or recovery options deleted\", \"Office application started a script interpreter\", \"PowerShell with an encoded command or an in-memory download\"]);\r\nlet RuleIds = dynamic([\"269b214c-4535-5db6-b90e-f0dc98dcfe58\", \"dff27c7a-6764-559f-9b03-062f14c91a21\", \"26bb6700-af0f-5b78-9717-ec1bf7046e3b\", \"51a410ac-bc9b-5cfb-bf02-8626d6aed0b4\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

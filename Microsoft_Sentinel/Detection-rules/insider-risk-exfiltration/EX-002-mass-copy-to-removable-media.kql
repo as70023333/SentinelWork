@@ -1,0 +1,67 @@
+// Title: Many files copied to removable media
+// Id: EX-002
+// Severity: Medium
+// Tactics: Exfiltration
+// Techniques: T1052
+// Sub-techniques: T1052.001
+// Tables: DeviceEvents, DeviceFileEvents
+// Frequency: PT1H
+// Period: P7D
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain)
+// Custom details: Files, TotalMB, UsbProduct, UsbSerial, DriveLetter
+// Description: A user created a large number of files on a USB drive within two hours. The rule pairs
+//   each new file with the USB drive that was most recently mounted on that drive letter, so internal
+//   drives and network shares are not counted and the alert names the right drive when a letter has
+//   been used by more than one.
+// False positives: IT staff building installation media, photographers and engineers who work from
+//   external drives, and backups to a USB disk.
+// Tuning: Change MinFiles. Add file extensions you do not care about to IgnoredExtensions. A drive
+//   that has stayed plugged in for more than seven days is not matched. If USB storage is not allowed
+//   at all, block it with device control and treat any hit as a policy breach.
+// Response: Review the file names and the user's role. If the data is sensitive, speak to the user's
+//   manager and HR before the user, and keep the serial number of the drive for the record.
+// References: https://learn.microsoft.com/defender-endpoint/device-control-overview
+let MinFiles = 100;
+let IgnoredExtensions = dynamic(["tmp", "lnk", "ini", "db"]);
+let Mounts = DeviceEvents
+    | where TimeGenerated > ago(7d)
+    | where ActionType == "UsbDriveMounted"
+    | extend Usb = parse_json(tostring(AdditionalFields))
+    | project DeviceId,
+              DriveLetter = toupper(substring(tostring(Usb.DriveLetter), 0, 2)),
+              MountedAt = TimeGenerated,
+              UsbProduct = tostring(Usb.ProductName),
+              UsbSerial = tostring(Usb.SerialNumber)
+    | where isnotempty(DriveLetter);
+// Devices with a new file that reached the workspace since the last run. Each is then judged on the
+// last two hours, so a copy that straddles two runs is counted whole.
+let Touched = DeviceFileEvents
+    | where TimeGenerated > ago(2h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where ActionType == "FileCreated"
+    | distinct DeviceId;
+DeviceFileEvents
+| where TimeGenerated > ago(2h)
+| where ActionType == "FileCreated" and DeviceId in (Touched)
+| extend DriveLetter = toupper(substring(FolderPath, 0, 2)),
+         Extension = tolower(extract(@"\.([A-Za-z0-9]{1,8})$", 1, FileName))
+| where Extension !in (IgnoredExtensions)
+| project CopiedAt = TimeGenerated, DeviceId, DeviceName, DriveLetter, FolderPath, FileName, FileSize, Extension,
+          AccountName = InitiatingProcessAccountName, AccountDomain = InitiatingProcessAccountDomain
+| join kind=inner Mounts on DeviceId, DriveLetter
+| where MountedAt <= CopiedAt
+// A drive letter is reused: keep, for each file, the drive mounted most recently before it was written.
+| summarize arg_max(MountedAt, UsbProduct, UsbSerial)
+            by DeviceId, DeviceName, DriveLetter, FolderPath, FileName, FileSize, Extension, AccountName,
+               AccountDomain, CopiedAt
+| summarize Files = dcount(FolderPath),
+            TotalMB = round(sum(FileSize) / 1048576.0, 1),
+            Extensions = make_set(Extension, 15),
+            FileSample = make_set(FileName, 15),
+            FirstCopy = min(CopiedAt),
+            LastCopy = max(CopiedAt)
+            by DeviceId, DeviceName, AccountName, AccountDomain, DriveLetter, UsbProduct, UsbSerial
+| where Files >= MinFiles
+| project FirstCopy, LastCopy, DeviceName, DeviceId, AccountName, AccountDomain, DriveLetter, UsbProduct, UsbSerial,
+          Files, TotalMB, Extensions, FileSample

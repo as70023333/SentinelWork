@@ -1,0 +1,234 @@
+name = "Identity Sign-ins"
+file = "IdentitySignIns"
+area = "identity-sign-ins"
+summary = "Who is signing in, from where, what fails and why: password sprays, MFA, legacy authentication and risky sign-ins"
+tables = ["SigninLogs"]
+default_range = "7d"
+intro = """
+Interactive sign-ins to Microsoft Entra ID. Use it to answer three questions quickly: is something
+attacking our accounts (failures spread across many accounts from one address), did an attack work
+(a success after the failures, a new country, a risky sign-in), and what are we leaving open
+(legacy authentication, sign-ins without MFA).
+
+"Interrupted" means Entra ID asked the user for something more (MFA, consent, a password change)
+and is not counted as a failure.
+"""
+
+[[tab]]
+name = "Overview"
+
+[[tab.item]]
+kind = "tiles"
+title = "Sign-ins in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+let Interrupts = dynamic(["50058", "50140", "51006", "50059", "65001", "52004", "50055", "50144", "50072", "50074",
+                          "16000", "16001", "16003", "50127", "50125", "50129", "50143", "81010", "81014", "81012"]);
+SigninLogs
+| summarize SignIns = count(),
+            Successful = countif(ResultType == "0"),
+            Failed = countif(ResultType != "0" and ResultType !in (Interrupts)),
+            Users = dcount(UserPrincipalName),
+            Risky = countif(RiskLevelDuringSignIn in ("high", "medium")),
+            Legacy = countif(ResultType == "0" and isnotempty(ClientAppUsed)
+                             and ClientAppUsed !in ("Browser", "Mobile Apps and Desktop clients")),
+            SingleFactor = countif(ResultType == "0" and AuthenticationRequirement == "singleFactorAuthentication")
+| project Tiles = pack_array(
+    bag_pack("Metric", "Sign-ins", "Value", SignIns),
+    bag_pack("Metric", "Successful", "Value", Successful),
+    bag_pack("Metric", "Failed", "Value", Failed),
+    bag_pack("Metric", "Users", "Value", Users),
+    bag_pack("Metric", "Risky (medium or high)", "Value", Risky),
+    bag_pack("Metric", "Successful with legacy authentication", "Value", Legacy),
+    bag_pack("Metric", "Successful with a single factor", "Value", SingleFactor))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Sign-ins over time, by outcome"
+colours = { Success = "green", Interrupted = "blue", Failure = "redBright" }
+query = '''
+let Interrupts = dynamic(["50058", "50140", "51006", "50059", "65001", "52004", "50055", "50144", "50072", "50074",
+                          "16000", "16001", "16003", "50127", "50125", "50129", "50143", "81010", "81014", "81012"]);
+SigninLogs
+| extend Outcome = case(ResultType == "0", "Success", ResultType in (Interrupts), "Interrupted", "Failure")
+| summarize SignIns = count() by bin(TimeGenerated, {TimeRange:grain}), Outcome
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Why sign-ins fail"
+width = 50
+bars = ["Failures"]
+palette = "orange"
+query = '''
+let Interrupts = dynamic(["50058", "50140", "51006", "50059", "65001", "52004", "50055", "50144", "50072", "50074",
+                          "16000", "16001", "16003", "50127", "50125", "50129", "50143", "81010", "81014", "81012"]);
+SigninLogs
+| where ResultType != "0" and ResultType !in (Interrupts)
+| summarize Failures = count(), Users = dcount(UserPrincipalName), LastSeen = max(TimeGenerated)
+            by ErrorCode = ResultType, Reason = ResultDescription
+| top 20 by Failures desc
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Failed sign-ins by country (top 15)"
+width = 50
+query = '''
+let Interrupts = dynamic(["50058", "50140", "51006", "50059", "65001", "52004", "50055", "50144", "50072", "50074",
+                          "16000", "16001", "16003", "50127", "50125", "50129", "50143", "81010", "81014", "81012"]);
+SigninLogs
+| where ResultType != "0" and ResultType !in (Interrupts)
+| summarize Failures = count() by Country = iff(isempty(Location), "Unknown", Location)
+| top 15 by Failures desc
+'''
+
+[[tab.item]]
+kind = "piechart"
+title = "Conditional Access result"
+width = 33
+query = '''
+SigninLogs
+| summarize SignIns = count() by Result = iff(isempty(ConditionalAccessStatus), "notApplied", ConditionalAccessStatus)
+'''
+
+[[tab.item]]
+kind = "piechart"
+title = "Authentication requirement of successful sign-ins"
+width = 33
+query = '''
+SigninLogs
+| where ResultType == "0"
+| summarize SignIns = count() by Requirement = iff(isempty(AuthenticationRequirement), "unknown", AuthenticationRequirement)
+'''
+
+[[tab.item]]
+kind = "piechart"
+title = "Client used by successful sign-ins"
+width = 34
+query = '''
+SigninLogs
+| where ResultType == "0"
+| summarize SignIns = count() by Client = iff(isempty(ClientAppUsed), "unknown", ClientAppUsed)
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Applications"
+bars = ["SignIns"]
+heat = ["FailurePercent"]
+query = '''
+let Interrupts = dynamic(["50058", "50140", "51006", "50059", "65001", "52004", "50055", "50144", "50072", "50074",
+                          "16000", "16001", "16003", "50127", "50125", "50129", "50143", "81010", "81014", "81012"]);
+SigninLogs
+| summarize SignIns = count(),
+            Users = dcount(UserPrincipalName),
+            Failed = countif(ResultType != "0" and ResultType !in (Interrupts))
+            by Application = AppDisplayName
+| extend FailurePercent = round(100.0 * Failed / SignIns, 1)
+| top 25 by SignIns desc
+'''
+
+[[tab]]
+name = "Investigate"
+
+[[tab.item]]
+kind = "text"
+text = """
+Start with the second table. An address that fails for many accounts, a few times each, is a password
+spray; if **Successful** is not zero for that address, those accounts need attention first.
+"""
+
+[[tab.item]]
+kind = "table"
+title = "Accounts with the most failed sign-ins"
+width = 50
+bars = ["Failures"]
+palette = "orange"
+query = '''
+let Interrupts = dynamic(["50058", "50140", "51006", "50059", "65001", "52004", "50055", "50144", "50072", "50074",
+                          "16000", "16001", "16003", "50127", "50125", "50129", "50143", "81010", "81014", "81012"]);
+SigninLogs
+| where ResultType != "0" and ResultType !in (Interrupts)
+| summarize Failures = count(),
+            Addresses = dcount(IPAddress),
+            Countries = strcat_array(make_set(Location, 8), ", "),
+            arg_max(TimeGenerated, ResultDescription)
+            by Account = UserPrincipalName
+| project Account, Failures, Addresses, Countries, LastFailure = TimeGenerated, LastError = ResultDescription
+| top 50 by Failures desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Addresses that fail for many accounts (password spray candidates)"
+width = 50
+bars = ["Accounts"]
+heat = ["Successful"]
+palette = "redBright"
+query = '''
+SigninLogs
+| summarize Accounts = dcountif(UserPrincipalName, ResultType in ("50126", "50053")),
+            Failures = countif(ResultType in ("50126", "50053")),
+            Successful = countif(ResultType == "0"),
+            Country = take_any(Location),
+            LastSeen = max(TimeGenerated)
+            by Address = IPAddress
+| where Accounts >= 5
+| top 50 by Accounts desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Risky sign-ins"
+severity = "Risk"
+query = '''
+SigninLogs
+| where RiskLevelDuringSignIn in ("high", "medium", "low")
+| project TimeGenerated,
+          Account = UserPrincipalName,
+          Risk = case(RiskLevelDuringSignIn == "high", "High", RiskLevelDuringSignIn == "medium", "Medium", "Low"),
+          State = RiskState,
+          Detections = RiskEventTypes_V2,
+          Address = IPAddress,
+          Country = Location,
+          Application = AppDisplayName,
+          Result = iff(ResultType == "0", "Success", ResultDescription)
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Successful sign-ins with legacy authentication"
+width = 50
+bars = ["SignIns"]
+query = '''
+SigninLogs
+| where ResultType == "0"
+| where isnotempty(ClientAppUsed) and ClientAppUsed !in ("Browser", "Mobile Apps and Desktop clients")
+| summarize SignIns = count(), Addresses = dcount(IPAddress), LastSeen = max(TimeGenerated)
+            by Account = UserPrincipalName, Protocol = ClientAppUsed
+| top 50 by SignIns desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Accounts signing in successfully from more than one country"
+width = 50
+bars = ["CountryCount"]
+query = '''
+SigninLogs
+| where ResultType == "0" and isnotempty(Location)
+| summarize CountryCount = dcount(Location),
+            Countries = strcat_array(make_set(Location, 10), ", "),
+            SignIns = count(),
+            LastSeen = max(TimeGenerated)
+            by Account = UserPrincipalName
+| where CountryCount > 1
+| top 50 by CountryCount desc
+'''

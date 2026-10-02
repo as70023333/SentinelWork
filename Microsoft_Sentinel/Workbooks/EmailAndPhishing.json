@@ -1,0 +1,824 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Email and Phishing\n\nDefender for Office 365 data, following a malicious message through its life: arrival and verdict\n(**Overview**), the user's click (**Clicks**), and what happened after delivery, including mailbox\nrules that forward or hide mail (**After delivery**).\n\nThe number to watch is **Threat mail delivered**: messages the filter identified as phishing or\nmalware that still reached a mailbox, usually because an allow list or override let them through.\n\n**Tables read:** `EmailEvents`, `UrlClickEvents`, `EmailPostDeliveryEvents`, `CloudAppEvents`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "34cabdf1-bb90-5ce3-8a0c-d22a8b5b06ea",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "6391800b-a3c1-5f37-8cb7-6b4b0ebaa8d0",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "Overview",
+            "style": "link"
+          },
+          {
+            "id": "8f5117bb-a7cf-5414-98d6-1f5fdc593652",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Clicks",
+            "subTarget": "Clicks",
+            "style": "link"
+          },
+          {
+            "id": "40644c9b-7651-5bff-8b25-d92914b70133",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "After delivery",
+            "subTarget": "After delivery",
+            "style": "link"
+          },
+          {
+            "id": "c7b5a253-5627-5e32-a2c9-cc5e5cf5242c",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailEvents\r\n| where EmailDirection == \"Inbound\"\r\n| summarize Messages = count(),\r\n            Phishing = countif(ThreatTypes has \"Phish\"),\r\n            Malware = countif(ThreatTypes has \"Malware\"),\r\n            Spam = countif(ThreatTypes has \"Spam\"),\r\n            DeliveredThreats = countif(ThreatTypes has_any (\"Phish\", \"Malware\") and DeliveryAction == \"Delivered\"),\r\n            Blocked = countif(DeliveryAction == \"Blocked\"),\r\n            Targeted = dcountif(RecipientEmailAddress, ThreatTypes has_any (\"Phish\", \"Malware\"))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Inbound messages\", \"Value\", Messages),\r\n    bag_pack(\"Metric\", \"Phishing\", \"Value\", Phishing),\r\n    bag_pack(\"Metric\", \"Malware\", \"Value\", Malware),\r\n    bag_pack(\"Metric\", \"Spam\", \"Value\", Spam),\r\n    bag_pack(\"Metric\", \"Threat mail delivered\", \"Value\", DeliveredThreats),\r\n    bag_pack(\"Metric\", \"Messages blocked\", \"Value\", Blocked),\r\n    bag_pack(\"Metric\", \"Recipients sent phishing or malware\", \"Value\", Targeted))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "size": 4,
+              "title": "Inbound mail in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailEvents\r\n| where EmailDirection == \"Inbound\" and isnotempty(ThreatTypes)\r\n| extend Threat = case(ThreatTypes has \"Malware\", \"Malware\", ThreatTypes has \"Phish\", \"Phishing\", ThreatTypes has \"Spam\", \"Spam\", \"Other\")\r\n| summarize Messages = count() by bin(TimeGenerated, {TimeRange:grain}), Threat",
+              "size": 0,
+              "title": "Threat mail over time",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "Phishing",
+                    "color": "redBright"
+                  },
+                  {
+                    "seriesName": "Malware",
+                    "color": "purple"
+                  },
+                  {
+                    "seriesName": "Spam",
+                    "color": "gray"
+                  }
+                ]
+              }
+            },
+            "customWidth": "67",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailEvents\r\n| where EmailDirection == \"Inbound\" and ThreatTypes has_any (\"Phish\", \"Malware\")\r\n| summarize Messages = count() by Outcome = strcat(DeliveryAction, \" (\", DeliveryLocation, \")\")",
+              "size": 0,
+              "title": "What happened to phishing and malware mail",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "piechart"
+            },
+            "customWidth": "33",
+            "name": "overview-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailEvents\r\n| where EmailDirection == \"Inbound\" and ThreatTypes has_any (\"Phish\", \"Malware\")\r\n| summarize ThreatMessages = count(),\r\n            Phishing = countif(ThreatTypes has \"Phish\"),\r\n            Malware = countif(ThreatTypes has \"Malware\"),\r\n            Delivered = countif(DeliveryAction == \"Delivered\"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Recipient = RecipientEmailAddress\r\n| top 50 by ThreatMessages desc",
+              "size": 0,
+              "title": "Most targeted recipients",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "ThreatMessages",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  },
+                  {
+                    "columnMatch": "Delivered",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "overview-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailEvents\r\n| where EmailDirection == \"Inbound\" and ThreatTypes has_any (\"Phish\", \"Malware\")\r\n| summarize ThreatMessages = count(),\r\n            Recipients = dcount(RecipientEmailAddress),\r\n            Delivered = countif(DeliveryAction == \"Delivered\"),\r\n            ExampleSubject = take_any(Subject),\r\n            LastSeen = max(TimeGenerated)\r\n            by SenderDomain = SenderFromDomain\r\n| top 50 by ThreatMessages desc",
+              "size": 0,
+              "title": "Sender domains of phishing and malware",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "ThreatMessages",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  },
+                  {
+                    "columnMatch": "Delivered",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "overview-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailEvents\r\n| where EmailDirection == \"Inbound\" and ThreatTypes has_any (\"Phish\", \"Malware\") and DeliveryAction == \"Delivered\"\r\n| project TimeGenerated,\r\n          Recipient = RecipientEmailAddress,\r\n          Sender = SenderFromAddress,\r\n          Subject,\r\n          Threat = ThreatTypes,\r\n          Location = DeliveryLocation,\r\n          OrgOverride = strcat(OrgLevelAction, \" \", OrgLevelPolicy),\r\n          UserOverride = strcat(UserLevelAction, \" \", UserLevelPolicy),\r\n          NetworkMessageId\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Threat mail that was delivered, and the policy that allowed it",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-6",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "UrlClickEvents\r\n| summarize Clicks = count(),\r\n            Malicious = countif(isnotempty(ThreatTypes)),\r\n            Reached = countif(isnotempty(ThreatTypes) and (ActionType == \"ClickAllowed\" or IsClickedThrough == true)),\r\n            Stopped = countif(ActionType startswith \"ClickBlocked\" and coalesce(IsClickedThrough, false) == false),\r\n            Users = dcountif(AccountUpn, isnotempty(ThreatTypes))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Clicks\", \"Value\", Clicks),\r\n    bag_pack(\"Metric\", \"Clicks on malicious URLs\", \"Value\", Malicious),\r\n    bag_pack(\"Metric\", \"Malicious pages reached\", \"Value\", Reached),\r\n    bag_pack(\"Metric\", \"Clicks blocked\", \"Value\", Stopped),\r\n    bag_pack(\"Metric\", \"Users who clicked a malicious URL\", \"Value\", Users))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "size": 4,
+              "title": "Safe Links clicks in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "clicks-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "UrlClickEvents\r\n| where isnotempty(ThreatTypes)\r\n| summarize Clicks = count() by bin(TimeGenerated, {TimeRange:grain}), Action = ActionType",
+              "size": 0,
+              "title": "Clicks on malicious URLs over time, by what Safe Links did",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "clicks-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "UrlClickEvents\r\n| where isnotempty(ThreatTypes)\r\n| project TimeGenerated,\r\n          Account = AccountUpn,\r\n          Url,\r\n          Threat = ThreatTypes,\r\n          Action = ActionType,\r\n          ReachedPage = ActionType == \"ClickAllowed\" or coalesce(IsClickedThrough, false),\r\n          Workload,\r\n          Address = IPAddress,\r\n          NetworkMessageId\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Clicks on malicious URLs",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "clicks-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Clicks"
+      },
+      "name": "tab-clicks"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailPostDeliveryEvents\r\n| summarize Messages = count(), Recipients = dcount(RecipientEmailAddress), LastSeen = max(TimeGenerated)\r\n            by Type = ActionType, Action, Result = ActionResult\r\n| order by Messages desc",
+              "size": 0,
+              "title": "Actions on mail after delivery",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Messages",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "40",
+            "name": "after-delivery-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "EmailPostDeliveryEvents\r\n| where ActionType has \"ZAP\" or ActionType has \"remediation\"\r\n| project TimeGenerated,\r\n          Recipient = RecipientEmailAddress,\r\n          Sender = SenderFromAddress,\r\n          Type = ActionType,\r\n          Action,\r\n          Result = ActionResult,\r\n          Threat = ThreatTypes,\r\n          NetworkMessageId\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Messages removed after delivery",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "60",
+            "name": "after-delivery-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "CloudAppEvents\r\n| where ActionType in~ (\"New-InboxRule\", \"Set-InboxRule\")\r\n| mv-apply Parameter = RawEventData.Parameters on (\r\n    summarize Settings = make_bag(bag_pack(tostring(Parameter.Name), tostring(Parameter.Value))))\r\n| project TimeGenerated,\r\n          Account = tostring(RawEventData.UserId),\r\n          Operation = ActionType,\r\n          RuleName = tostring(Settings.Name),\r\n          ForwardsTo = coalesce(tostring(Settings.ForwardTo), tostring(Settings.ForwardAsAttachmentTo), tostring(Settings.RedirectTo)),\r\n          MovesTo = tostring(Settings.MoveToFolder),\r\n          Deletes = tostring(Settings.DeleteMessage),\r\n          Address = IPAddress,\r\n          Country = CountryCode\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Inbox rules created or changed",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "after-delivery-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "After delivery"
+      },
+      "name": "tab-after-delivery"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"EM-001\", \"User clicked through to a malicious URL\", \"High\", \"InitialAccess\",\r\n    \"EM-002\", \"Phishing or malware email delivered to several recipients\", \"Medium\", \"InitialAccess\",\r\n    \"EM-003\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Medium\", \"Collection, DefenseEvasion\",\r\n    \"EM-004\", \"Recipient clicked a link in mail that was later removed as malicious\", \"High\", \"InitialAccess\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nlet RuleIds = dynamic([\"fe084df5-e336-5cc2-aa3c-14b2ca5392fa\", \"3283f45d-5e7c-5c14-b082-92d089b69086\", \"4c2d3dd2-de54-5677-a14d-6577a2016a7c\", \"1e3eb5d7-e2e7-5fdf-b100-b5dbab56e901\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

@@ -1,0 +1,740 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Azure Control Plane Activity\n\nThe Azure activity log: every create, change, delete and action against Azure resources, with the\nidentity and address that asked for it. **Overview** shows the volume and who is active.\n**Sensitive operations** lists the handful of operations that change who has access or what is\nlogged. **Failures** shows callers that are being refused, which is what exploring with a stolen\ncredential looks like.\n\nCounts use the final record of each operation (status Success or Failure), so an operation is\ncounted once.\n\n**Tables read:** `AzureActivity`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "ba1d195c-39a2-537a-8b6e-8820f1bc54e9",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "3e74f424-37b8-54be-82a6-e1b1857ead44",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "Overview",
+            "style": "link"
+          },
+          {
+            "id": "601488e0-6e2f-53de-8d6c-93ac1f5833b9",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Sensitive operations",
+            "subTarget": "Sensitive operations",
+            "style": "link"
+          },
+          {
+            "id": "30d113ef-8a8b-55b4-a087-79a0e2d58f80",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Failures",
+            "subTarget": "Failures",
+            "style": "link"
+          },
+          {
+            "id": "6d87fd86-dda3-54c5-a64b-d1c5d781ebb4",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| summarize Succeeded = countif(ActivityStatusValue =~ \"Success\"),\r\n            Failed = countif(ActivityStatusValue =~ \"Failure\"),\r\n            Callers = dcount(Caller),\r\n            Deletes = countif(ActivityStatusValue =~ \"Success\" and OperationNameValue endswith \"/DELETE\"),\r\n            RoleChanges = countif(ActivityStatusValue =~ \"Success\"\r\n                                  and OperationNameValue startswith \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/\"),\r\n            Subscriptions = dcount(SubscriptionId)\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Operations succeeded\", \"Value\", Succeeded),\r\n    bag_pack(\"Metric\", \"Operations failed\", \"Value\", Failed),\r\n    bag_pack(\"Metric\", \"Callers\", \"Value\", Callers),\r\n    bag_pack(\"Metric\", \"Deletions\", \"Value\", Deletes),\r\n    bag_pack(\"Metric\", \"Role assignment changes\", \"Value\", RoleChanges),\r\n    bag_pack(\"Metric\", \"Subscriptions\", \"Value\", Subscriptions))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "size": 4,
+              "title": "Activity in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Success\"\r\n| extend Kind = case(OperationNameValue endswith \"/WRITE\", \"Write\",\r\n                     OperationNameValue endswith \"/DELETE\", \"Delete\",\r\n                     OperationNameValue endswith \"/ACTION\", \"Action\",\r\n                     \"Other\")\r\n| summarize Operations = count() by bin(TimeGenerated, {TimeRange:grain}), Kind",
+              "size": 0,
+              "title": "Successful operations over time, by kind",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "Write",
+                    "color": "blue"
+                  },
+                  {
+                    "seriesName": "Delete",
+                    "color": "redBright"
+                  },
+                  {
+                    "seriesName": "Action",
+                    "color": "orange"
+                  },
+                  {
+                    "seriesName": "Other",
+                    "color": "gray"
+                  }
+                ]
+              }
+            },
+            "customWidth": "60",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Success\" and isnotempty(ResourceProviderValue)\r\n| summarize Operations = count() by Provider = toupper(ResourceProviderValue)\r\n| top 12 by Operations desc",
+              "size": 0,
+              "title": "Operations by resource provider (top 12)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "40",
+            "name": "overview-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| where ActivityStatusValue in~ (\"Success\", \"Failure\")\r\n| summarize Writes = countif(ActivityStatusValue =~ \"Success\" and OperationNameValue endswith \"/WRITE\"),\r\n            Deletes = countif(ActivityStatusValue =~ \"Success\" and OperationNameValue endswith \"/DELETE\"),\r\n            Actions = countif(ActivityStatusValue =~ \"Success\" and OperationNameValue endswith \"/ACTION\"),\r\n            Failures = countif(ActivityStatusValue =~ \"Failure\"),\r\n            Addresses = dcount(CallerIpAddress),\r\n            Subscriptions = dcount(SubscriptionId),\r\n            LastSeen = max(TimeGenerated)\r\n            by Caller\r\n| top 50 by Writes + Deletes + Actions desc",
+              "size": 0,
+              "title": "Callers",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Writes",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "Deletes",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "Failures",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Sensitive = datatable(Operation:string, Meaning:string) [\r\n    \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE\", \"Role assigned\",\r\n    \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE\", \"Role assignment removed\",\r\n    \"MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/WRITE\", \"Custom role created or changed\",\r\n    \"MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION\", \"Global Administrator elevated to User Access Administrator\",\r\n    \"MICROSOFT.AUTHORIZATION/LOCKS/DELETE\", \"Resource lock removed\",\r\n    \"MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE\", \"Policy assignment removed\",\r\n    \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE\", \"Diagnostic setting deleted\",\r\n    \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE\", \"Diagnostic setting changed\",\r\n    \"MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DELETE\", \"Log Analytics workspace deleted\",\r\n    \"MICROSOFT.SECURITYINSIGHTS/ALERTRULES/DELETE\", \"Sentinel analytics rule deleted\",\r\n    \"MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE\", \"Network security group rule changed\",\r\n    \"MICROSOFT.NETWORK/PUBLICIPADDRESSES/WRITE\", \"Public IP address created or changed\",\r\n    \"MICROSOFT.KEYVAULT/VAULTS/ACCESSPOLICIES/WRITE\", \"Key vault access policy changed\",\r\n    \"MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION\", \"Storage account keys listed\",\r\n    \"MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION\", \"Run Command on a virtual machine\",\r\n    \"MICROSOFT.COMPUTE/VIRTUALMACHINES/EXTENSIONS/WRITE\", \"Virtual machine extension installed\",\r\n    \"MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION\", \"Disk export (SAS) started\",\r\n    \"MICROSOFT.COMPUTE/SNAPSHOTS/WRITE\", \"Disk snapshot created\"\r\n];\r\nAzureActivity\r\n| where ActivityStatusValue =~ \"Success\"\r\n| extend Operation = toupper(OperationNameValue)\r\n| join kind=inner Sensitive on Operation\r\n| project TimeGenerated, Meaning, Caller, Address = CallerIpAddress, Resource = _ResourceId, ResourceGroup, SubscriptionId\r\n| order by TimeGenerated desc\r\n| take 500",
+              "size": 0,
+              "title": "Operations that change access, logging or network exposure",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 500
+              }
+            },
+            "customWidth": "100",
+            "name": "sensitive-operations-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Sensitive = datatable(Operation:string, Meaning:string) [\r\n    \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE\", \"Role assigned\",\r\n    \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE\", \"Role assignment removed\",\r\n    \"MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/WRITE\", \"Custom role created or changed\",\r\n    \"MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION\", \"Global Administrator elevated to User Access Administrator\",\r\n    \"MICROSOFT.AUTHORIZATION/LOCKS/DELETE\", \"Resource lock removed\",\r\n    \"MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE\", \"Policy assignment removed\",\r\n    \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE\", \"Diagnostic setting deleted\",\r\n    \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE\", \"Diagnostic setting changed\",\r\n    \"MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DELETE\", \"Log Analytics workspace deleted\",\r\n    \"MICROSOFT.SECURITYINSIGHTS/ALERTRULES/DELETE\", \"Sentinel analytics rule deleted\",\r\n    \"MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE\", \"Network security group rule changed\",\r\n    \"MICROSOFT.NETWORK/PUBLICIPADDRESSES/WRITE\", \"Public IP address created or changed\",\r\n    \"MICROSOFT.KEYVAULT/VAULTS/ACCESSPOLICIES/WRITE\", \"Key vault access policy changed\",\r\n    \"MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION\", \"Storage account keys listed\",\r\n    \"MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION\", \"Run Command on a virtual machine\",\r\n    \"MICROSOFT.COMPUTE/VIRTUALMACHINES/EXTENSIONS/WRITE\", \"Virtual machine extension installed\",\r\n    \"MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION\", \"Disk export (SAS) started\",\r\n    \"MICROSOFT.COMPUTE/SNAPSHOTS/WRITE\", \"Disk snapshot created\"\r\n];\r\nAzureActivity\r\n| where ActivityStatusValue =~ \"Success\"\r\n| extend Operation = toupper(OperationNameValue)\r\n| join kind=inner Sensitive on Operation\r\n| summarize Operations = count() by Caller\r\n| top 15 by Operations desc",
+              "size": 0,
+              "title": "The same operations, by caller",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "50",
+            "name": "sensitive-operations-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Success\" and OperationNameValue endswith \"/DELETE\"\r\n| where OperationNameValue !startswith \"MICROSOFT.RESOURCES/DEPLOYMENTS\"\r\n| summarize Deleted = dcount(_ResourceId),\r\n            Types = strcat_array(make_set(OperationNameValue, 6), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Caller, ResourceGroup\r\n| top 50 by Deleted desc",
+              "size": 0,
+              "title": "Deletions by caller and resource group",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Deleted",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "sensitive-operations-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Sensitive operations"
+      },
+      "name": "tab-sensitive-operations"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Failure\"\r\n| summarize Failures = count(),\r\n            Refused = countif(ActivitySubstatusValue in~ (\"Forbidden\", \"Unauthorized\")),\r\n            Operations = dcount(OperationNameValue),\r\n            Examples = strcat_array(make_set(OperationNameValue, 5), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Caller, Address = CallerIpAddress\r\n| where Refused > 0\r\n| top 50 by Refused desc",
+              "size": 0,
+              "title": "Callers being refused",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Refused",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "failures-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AzureActivity\r\n| where ActivityStatusValue in~ (\"Success\", \"Failure\") and isnotempty(CallerIpAddress)\r\n| summarize Operations = count(), FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)\r\n            by Caller, Address = CallerIpAddress\r\n| join kind=inner (\r\n    AzureActivity\r\n    | where isnotempty(CallerIpAddress)\r\n    | summarize AddressCount = dcount(CallerIpAddress) by Caller\r\n    | where AddressCount > 1) on Caller\r\n| project Caller, Address, Operations, FirstSeen, LastSeen, AddressCount\r\n| order by AddressCount desc, Caller asc, Operations desc\r\n| take 250",
+              "size": 0,
+              "title": "Addresses each caller used",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Operations",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "failures-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Failures"
+      },
+      "name": "tab-failures"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"AZ-001\", \"Azure diagnostic settings deleted\", \"Medium\", \"DefenseEvasion\",\r\n    \"AZ-002\", \"Owner or other privileged Azure role assigned\", \"High\", \"Persistence, PrivilegeEscalation\",\r\n    \"AZ-003\", \"Many Azure resources deleted by one caller\", \"High\", \"Impact\",\r\n    \"AZ-004\", \"Run Command executed on a virtual machine\", \"Medium\", \"Execution\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Azure diagnostic settings deleted\", \"Owner or other privileged Azure role assigned\", \"Many Azure resources deleted by one caller\", \"Run Command executed on a virtual machine\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Azure diagnostic settings deleted\", \"Owner or other privileged Azure role assigned\", \"Many Azure resources deleted by one caller\", \"Run Command executed on a virtual machine\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Azure diagnostic settings deleted\", \"Owner or other privileged Azure role assigned\", \"Many Azure resources deleted by one caller\", \"Run Command executed on a virtual machine\"]);\r\nlet RuleIds = dynamic([\"b6ad0dc6-a84c-5f7c-ab97-0544db24b2e9\", \"0bce4b20-af76-5f31-ab81-71acb73e92ee\", \"7ea2fe36-0711-5ede-a437-e54475ef640a\", \"90fad50a-216f-5e78-8932-d335079ec4f7\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

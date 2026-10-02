@@ -1,0 +1,877 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Identity Sign-ins\n\nInteractive sign-ins to Microsoft Entra ID. Use it to answer three questions quickly: is something\nattacking our accounts (failures spread across many accounts from one address), did an attack work\n(a success after the failures, a new country, a risky sign-in), and what are we leaving open\n(legacy authentication, sign-ins without MFA).\n\n\"Interrupted\" means Entra ID asked the user for something more (MFA, consent, a password change)\nand is not counted as a failure.\n\n**Tables read:** `SigninLogs`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "add5f0e9-902b-5ed1-b3b2-9ae73aeb4ae5",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "a52834e9-47ca-58c6-a6d1-31c1ba6a8d45",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "Overview",
+            "style": "link"
+          },
+          {
+            "id": "ff5801e9-a0dc-589d-8ecf-2c8368eadd4f",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Investigate",
+            "subTarget": "Investigate",
+            "style": "link"
+          },
+          {
+            "id": "bde31e65-8e15-5641-bf11-e6ef928fdd71",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Interrupts = dynamic([\"50058\", \"50140\", \"51006\", \"50059\", \"65001\", \"52004\", \"50055\", \"50144\", \"50072\", \"50074\",\r\n                          \"16000\", \"16001\", \"16003\", \"50127\", \"50125\", \"50129\", \"50143\", \"81010\", \"81014\", \"81012\"]);\r\nSigninLogs\r\n| summarize SignIns = count(),\r\n            Successful = countif(ResultType == \"0\"),\r\n            Failed = countif(ResultType != \"0\" and ResultType !in (Interrupts)),\r\n            Users = dcount(UserPrincipalName),\r\n            Risky = countif(RiskLevelDuringSignIn in (\"high\", \"medium\")),\r\n            Legacy = countif(ResultType == \"0\" and isnotempty(ClientAppUsed)\r\n                             and ClientAppUsed !in (\"Browser\", \"Mobile Apps and Desktop clients\")),\r\n            SingleFactor = countif(ResultType == \"0\" and AuthenticationRequirement == \"singleFactorAuthentication\")\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Sign-ins\", \"Value\", SignIns),\r\n    bag_pack(\"Metric\", \"Successful\", \"Value\", Successful),\r\n    bag_pack(\"Metric\", \"Failed\", \"Value\", Failed),\r\n    bag_pack(\"Metric\", \"Users\", \"Value\", Users),\r\n    bag_pack(\"Metric\", \"Risky (medium or high)\", \"Value\", Risky),\r\n    bag_pack(\"Metric\", \"Successful with legacy authentication\", \"Value\", Legacy),\r\n    bag_pack(\"Metric\", \"Successful with a single factor\", \"Value\", SingleFactor))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "size": 4,
+              "title": "Sign-ins in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Interrupts = dynamic([\"50058\", \"50140\", \"51006\", \"50059\", \"65001\", \"52004\", \"50055\", \"50144\", \"50072\", \"50074\",\r\n                          \"16000\", \"16001\", \"16003\", \"50127\", \"50125\", \"50129\", \"50143\", \"81010\", \"81014\", \"81012\"]);\r\nSigninLogs\r\n| extend Outcome = case(ResultType == \"0\", \"Success\", ResultType in (Interrupts), \"Interrupted\", \"Failure\")\r\n| summarize SignIns = count() by bin(TimeGenerated, {TimeRange:grain}), Outcome",
+              "size": 0,
+              "title": "Sign-ins over time, by outcome",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "Success",
+                    "color": "green"
+                  },
+                  {
+                    "seriesName": "Interrupted",
+                    "color": "blue"
+                  },
+                  {
+                    "seriesName": "Failure",
+                    "color": "redBright"
+                  }
+                ]
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Interrupts = dynamic([\"50058\", \"50140\", \"51006\", \"50059\", \"65001\", \"52004\", \"50055\", \"50144\", \"50072\", \"50074\",\r\n                          \"16000\", \"16001\", \"16003\", \"50127\", \"50125\", \"50129\", \"50143\", \"81010\", \"81014\", \"81012\"]);\r\nSigninLogs\r\n| where ResultType != \"0\" and ResultType !in (Interrupts)\r\n| summarize Failures = count(), Users = dcount(UserPrincipalName), LastSeen = max(TimeGenerated)\r\n            by ErrorCode = ResultType, Reason = ResultDescription\r\n| top 20 by Failures desc",
+              "size": 0,
+              "title": "Why sign-ins fail",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Failures",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "overview-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Interrupts = dynamic([\"50058\", \"50140\", \"51006\", \"50059\", \"65001\", \"52004\", \"50055\", \"50144\", \"50072\", \"50074\",\r\n                          \"16000\", \"16001\", \"16003\", \"50127\", \"50125\", \"50129\", \"50143\", \"81010\", \"81014\", \"81012\"]);\r\nSigninLogs\r\n| where ResultType != \"0\" and ResultType !in (Interrupts)\r\n| summarize Failures = count() by Country = iff(isempty(Location), \"Unknown\", Location)\r\n| top 15 by Failures desc",
+              "size": 0,
+              "title": "Failed sign-ins by country (top 15)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "50",
+            "name": "overview-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| summarize SignIns = count() by Result = iff(isempty(ConditionalAccessStatus), \"notApplied\", ConditionalAccessStatus)",
+              "size": 0,
+              "title": "Conditional Access result",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "piechart"
+            },
+            "customWidth": "33",
+            "name": "overview-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| where ResultType == \"0\"\r\n| summarize SignIns = count() by Requirement = iff(isempty(AuthenticationRequirement), \"unknown\", AuthenticationRequirement)",
+              "size": 0,
+              "title": "Authentication requirement of successful sign-ins",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "piechart"
+            },
+            "customWidth": "33",
+            "name": "overview-6",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| where ResultType == \"0\"\r\n| summarize SignIns = count() by Client = iff(isempty(ClientAppUsed), \"unknown\", ClientAppUsed)",
+              "size": 0,
+              "title": "Client used by successful sign-ins",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "piechart"
+            },
+            "customWidth": "34",
+            "name": "overview-7",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Interrupts = dynamic([\"50058\", \"50140\", \"51006\", \"50059\", \"65001\", \"52004\", \"50055\", \"50144\", \"50072\", \"50074\",\r\n                          \"16000\", \"16001\", \"16003\", \"50127\", \"50125\", \"50129\", \"50143\", \"81010\", \"81014\", \"81012\"]);\r\nSigninLogs\r\n| summarize SignIns = count(),\r\n            Users = dcount(UserPrincipalName),\r\n            Failed = countif(ResultType != \"0\" and ResultType !in (Interrupts))\r\n            by Application = AppDisplayName\r\n| extend FailurePercent = round(100.0 * Failed / SignIns, 1)\r\n| top 25 by SignIns desc",
+              "size": 0,
+              "title": "Applications",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "SignIns",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "FailurePercent",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-8",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Start with the second table. An address that fails for many accounts, a few times each, is a password\nspray; if **Successful** is not zero for that address, those accounts need attention first."
+            },
+            "customWidth": "100",
+            "name": "investigate-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Interrupts = dynamic([\"50058\", \"50140\", \"51006\", \"50059\", \"65001\", \"52004\", \"50055\", \"50144\", \"50072\", \"50074\",\r\n                          \"16000\", \"16001\", \"16003\", \"50127\", \"50125\", \"50129\", \"50143\", \"81010\", \"81014\", \"81012\"]);\r\nSigninLogs\r\n| where ResultType != \"0\" and ResultType !in (Interrupts)\r\n| summarize Failures = count(),\r\n            Addresses = dcount(IPAddress),\r\n            Countries = strcat_array(make_set(Location, 8), \", \"),\r\n            arg_max(TimeGenerated, ResultDescription)\r\n            by Account = UserPrincipalName\r\n| project Account, Failures, Addresses, Countries, LastFailure = TimeGenerated, LastError = ResultDescription\r\n| top 50 by Failures desc",
+              "size": 0,
+              "title": "Accounts with the most failed sign-ins",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Failures",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "investigate-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| summarize Accounts = dcountif(UserPrincipalName, ResultType in (\"50126\", \"50053\")),\r\n            Failures = countif(ResultType in (\"50126\", \"50053\")),\r\n            Successful = countif(ResultType == \"0\"),\r\n            Country = take_any(Location),\r\n            LastSeen = max(TimeGenerated)\r\n            by Address = IPAddress\r\n| where Accounts >= 5\r\n| top 50 by Accounts desc",
+              "size": 0,
+              "title": "Addresses that fail for many accounts (password spray candidates)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Accounts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  },
+                  {
+                    "columnMatch": "Successful",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "investigate-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| where RiskLevelDuringSignIn in (\"high\", \"medium\", \"low\")\r\n| project TimeGenerated,\r\n          Account = UserPrincipalName,\r\n          Risk = case(RiskLevelDuringSignIn == \"high\", \"High\", RiskLevelDuringSignIn == \"medium\", \"Medium\", \"Low\"),\r\n          State = RiskState,\r\n          Detections = RiskEventTypes_V2,\r\n          Address = IPAddress,\r\n          Country = Location,\r\n          Application = AppDisplayName,\r\n          Result = iff(ResultType == \"0\", \"Success\", ResultDescription)\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Risky sign-ins",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Risk",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "investigate-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| where ResultType == \"0\"\r\n| where isnotempty(ClientAppUsed) and ClientAppUsed !in (\"Browser\", \"Mobile Apps and Desktop clients\")\r\n| summarize SignIns = count(), Addresses = dcount(IPAddress), LastSeen = max(TimeGenerated)\r\n            by Account = UserPrincipalName, Protocol = ClientAppUsed\r\n| top 50 by SignIns desc",
+              "size": 0,
+              "title": "Successful sign-ins with legacy authentication",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "SignIns",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "investigate-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SigninLogs\r\n| where ResultType == \"0\" and isnotempty(Location)\r\n| summarize CountryCount = dcount(Location),\r\n            Countries = strcat_array(make_set(Location, 10), \", \"),\r\n            SignIns = count(),\r\n            LastSeen = max(TimeGenerated)\r\n            by Account = UserPrincipalName\r\n| where CountryCount > 1\r\n| top 50 by CountryCount desc",
+              "size": 0,
+              "title": "Accounts signing in successfully from more than one country",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "CountryCount",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "investigate-6",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Investigate"
+      },
+      "name": "tab-investigate"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"ID-001\", \"Password spray from a single IP address\", \"Medium\", \"CredentialAccess\",\r\n    \"ID-002\", \"Repeated MFA denials followed by a successful sign-in\", \"High\", \"CredentialAccess\",\r\n    \"ID-003\", \"Successful sign-in from a country new for the user\", \"Medium\", \"InitialAccess\",\r\n    \"ID-004\", \"Successful sign-in with legacy authentication\", \"Medium\", \"InitialAccess\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Password spray from a single IP address\", \"Repeated MFA denials followed by a successful sign-in\", \"Successful sign-in from a country new for the user\", \"Successful sign-in with legacy authentication\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Password spray from a single IP address\", \"Repeated MFA denials followed by a successful sign-in\", \"Successful sign-in from a country new for the user\", \"Successful sign-in with legacy authentication\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Password spray from a single IP address\", \"Repeated MFA denials followed by a successful sign-in\", \"Successful sign-in from a country new for the user\", \"Successful sign-in with legacy authentication\"]);\r\nlet RuleIds = dynamic([\"07dec7c4-739b-532d-af40-42fb21e26b80\", \"831b9d58-0963-5eab-a47d-eeeb3abc5e70\", \"87b9d102-9b9f-525f-9cb8-86c89524b112\", \"583e2ac9-9a18-54af-ae9b-78731592650e\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

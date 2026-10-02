@@ -1,0 +1,718 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Privileged Access Changes\n\nThe Entra ID audit log, filtered to the changes an attacker makes to gain or keep privileged access\nand that an administrator makes rarely enough to review: directory role assignments, new secrets and\npermissions on applications, Conditional Access policy edits, security info (MFA method) changes and\npassword resets done by an administrator.\n\nEvery row names the **Actor** (who made the change). An actor you do not expect is the thing to look for.\n\n**Tables read:** `AuditLogs`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "f2a94887-e2d7-594c-ab2e-a78f8ccc2586",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 1209600000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "c128e3c9-2693-5e0b-b2c7-47a12807dacf",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "Overview",
+            "style": "link"
+          },
+          {
+            "id": "1e57d84a-739b-5409-8c48-2ddb0945c5ef",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Roles",
+            "subTarget": "Roles",
+            "style": "link"
+          },
+          {
+            "id": "30696f98-6fb4-51dd-9465-127d853982c5",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Applications and policy",
+            "subTarget": "Applications and policy",
+            "style": "link"
+          },
+          {
+            "id": "69925fb9-7dfe-57eb-969f-165efaf5e9ae",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where Result =~ \"success\"\r\n// A change made through PIM is written twice: by PIM and, as a copy, by the directory. The copy is left out.\r\n| extend RoleChange = (Category =~ \"RoleManagement\" and (\r\n                (LoggedByService =~ \"Core Directory\" and OperationName has \"member\"\r\n                 and tostring(InitiatedBy.app.displayName) !in~ (\"MS-PIM\", \"MS-PIM-Fairfax\"))\r\n                or (LoggedByService =~ \"PIM\" and OperationName has \"completed\")))\r\n| summarize RoleChanges = countif(RoleChange),\r\n            AppCredentials = countif(OperationName has \"Certificates and secrets management\"\r\n                                     or OperationName has \"service principal credentials\"),\r\n            Grants = countif(OperationName in~ (\"Consent to application\", \"Add app role assignment to service principal\",\r\n                                                \"Add delegated permission grant\")),\r\n            PolicyChanges = countif(OperationName has \"conditional access policy\"),\r\n            SecurityInfo = countif(OperationName has \"security info\"),\r\n            AdminResets = countif(OperationName =~ \"Reset user password\")\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Role membership changes and PIM activations\", \"Value\", RoleChanges),\r\n    bag_pack(\"Metric\", \"Application credential changes\", \"Value\", AppCredentials),\r\n    bag_pack(\"Metric\", \"Consents and permission grants\", \"Value\", Grants),\r\n    bag_pack(\"Metric\", \"Conditional Access policy changes\", \"Value\", PolicyChanges),\r\n    bag_pack(\"Metric\", \"Security info (MFA method) changes\", \"Value\", SecurityInfo),\r\n    bag_pack(\"Metric\", \"Passwords reset by an administrator\", \"Value\", AdminResets))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "size": 4,
+              "title": "Privileged changes in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where Result =~ \"success\"\r\n| extend RoleChange = (Category =~ \"RoleManagement\" and (\r\n                (LoggedByService =~ \"Core Directory\" and OperationName has \"member\"\r\n                 and tostring(InitiatedBy.app.displayName) !in~ (\"MS-PIM\", \"MS-PIM-Fairfax\"))\r\n                or (LoggedByService =~ \"PIM\" and OperationName has \"completed\")))\r\n| extend Change = case(\r\n    RoleChange, \"Role membership and activations\",\r\n    OperationName has \"Certificates and secrets management\" or OperationName has \"service principal credentials\", \"Application credentials\",\r\n    OperationName in~ (\"Consent to application\", \"Add app role assignment to service principal\", \"Add delegated permission grant\"), \"Consents and permissions\",\r\n    OperationName has \"conditional access policy\", \"Conditional Access\",\r\n    OperationName has \"security info\", \"Security info\",\r\n    OperationName =~ \"Reset user password\", \"Admin password resets\",\r\n    \"\")\r\n| where isnotempty(Change)\r\n| summarize Changes = count() by bin(TimeGenerated, {TimeRange:grain}), Change",
+              "size": 0,
+              "title": "Privileged changes over time, by type",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where Result =~ \"success\"\r\n| extend RoleChange = (Category =~ \"RoleManagement\" and (\r\n                (LoggedByService =~ \"Core Directory\" and OperationName has \"member\"\r\n                 and tostring(InitiatedBy.app.displayName) !in~ (\"MS-PIM\", \"MS-PIM-Fairfax\"))\r\n                or (LoggedByService =~ \"PIM\" and OperationName has \"completed\")))\r\n| extend Change = case(\r\n    RoleChange, \"Role membership and activations\",\r\n    OperationName has \"Certificates and secrets management\" or OperationName has \"service principal credentials\", \"Application credentials\",\r\n    OperationName in~ (\"Consent to application\", \"Add app role assignment to service principal\", \"Add delegated permission grant\"), \"Consents and permissions\",\r\n    OperationName has \"conditional access policy\", \"Conditional Access\",\r\n    OperationName =~ \"Reset user password\", \"Admin password resets\",\r\n    \"\")\r\n| where isnotempty(Change)\r\n| extend Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName), \"unknown\")\r\n| summarize Changes = count(),\r\n            Types = strcat_array(make_set(Change, 6), \", \"),\r\n            Addresses = strcat_array(make_set(tostring(InitiatedBy.user.ipAddress), 5), \", \"),\r\n            LastChange = max(TimeGenerated)\r\n            by Actor\r\n| top 50 by Changes desc",
+              "size": 0,
+              "title": "Who made privileged changes (security info changes not included)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Changes",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "60",
+            "name": "overview-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where Result =~ \"failure\"\r\n| where Category in~ (\"RoleManagement\", \"ApplicationManagement\", \"Policy\")\r\n| extend Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName), \"unknown\")\r\n| summarize Attempts = count(), LastAttempt = max(TimeGenerated), Reason = take_any(ResultDescription)\r\n            by Actor, Operation = OperationName\r\n| top 50 by Attempts desc",
+              "size": 0,
+              "title": "Privileged operations that failed",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Attempts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "40",
+            "name": "overview-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where LoggedByService =~ \"Core Directory\" and Category =~ \"RoleManagement\" and Result =~ \"success\"\r\n| where OperationName has \"member\"\r\n// Changes made through PIM are in the next table.\r\n| where tostring(InitiatedBy.app.displayName) !in~ (\"MS-PIM\", \"MS-PIM-Fairfax\")\r\n| mv-apply Property = TargetResources[0].modifiedProperties on (\r\n    where tostring(Property.displayName) == \"Role.DisplayName\"\r\n    | project Role = trim(@'\"', coalesce(tostring(Property.newValue), tostring(Property.oldValue))))\r\n| project TimeGenerated,\r\n          Operation = OperationName,\r\n          Role,\r\n          Target = coalesce(tostring(TargetResources[0].userPrincipalName), tostring(TargetResources[0].displayName)),\r\n          TargetType = tostring(TargetResources[0].type),\r\n          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\r\n          ActorAddress = tostring(InitiatedBy.user.ipAddress)\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Directory role membership changes (direct)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "roles-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where LoggedByService =~ \"PIM\" and Category =~ \"RoleManagement\" and Result =~ \"success\"\r\n| where OperationName has \"completed\"\r\n| project TimeGenerated,\r\n          Operation = OperationName,\r\n          Role = tostring(TargetResources[0].displayName),\r\n          Target = coalesce(tostring(TargetResources[2].userPrincipalName), tostring(TargetResources[2].displayName)),\r\n          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\r\n          Justification = ResultReason\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Role assignments and activations through Privileged Identity Management",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "roles-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where LoggedByService =~ \"PIM\" and Category =~ \"RoleManagement\" and Result =~ \"success\"\r\n| where OperationName has \"completed\" and OperationName has \"Add\"\r\n| summarize Grants = count() by Role = tostring(TargetResources[0].displayName)\r\n| top 15 by Grants desc",
+              "size": 0,
+              "title": "Roles granted or activated most often through PIM",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "roles-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Roles"
+      },
+      "name": "tab-roles"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where LoggedByService =~ \"Core Directory\" and Result =~ \"success\"\r\n| where OperationName has \"Certificates and secrets management\"\r\n    or OperationName has \"service principal credentials\"\r\n    or OperationName in~ (\"Consent to application\", \"Add app role assignment to service principal\",\r\n                          \"Add delegated permission grant\", \"Add owner to application\", \"Add owner to service principal\")\r\n| project TimeGenerated,\r\n          Operation = OperationName,\r\n          Application = tostring(TargetResources[0].displayName),\r\n          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\r\n          ActorAddress = tostring(InitiatedBy.user.ipAddress),\r\n          Changed = tostring(TargetResources[0].modifiedProperties)\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Secrets, certificates and permissions added to applications",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "applications-and-policy-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where Category =~ \"Policy\" and Result =~ \"success\"\r\n| where OperationName has \"conditional access policy\"\r\n| project TimeGenerated,\r\n          Operation = OperationName,\r\n          Policy = tostring(TargetResources[0].displayName),\r\n          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\r\n          ActorAddress = tostring(InitiatedBy.user.ipAddress)\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Conditional Access policy changes",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "applications-and-policy-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "AuditLogs\r\n| where Result =~ \"success\"\r\n| where OperationName has \"security info\" or OperationName =~ \"Reset user password\"\r\n| project TimeGenerated,\r\n          Operation = OperationName,\r\n          Account = coalesce(tostring(TargetResources[0].userPrincipalName), tostring(TargetResources[0].displayName)),\r\n          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\r\n          ActorAddress = tostring(InitiatedBy.user.ipAddress)\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Security info changes and passwords reset by an administrator",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "applications-and-policy-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Applications and policy"
+      },
+      "name": "tab-applications-and-policy"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"PA-001\", \"Account added to a privileged Entra ID role\", \"High\", \"Persistence, PrivilegeEscalation\",\r\n    \"PA-002\", \"New secret or certificate added to an application or service principal\", \"Medium\", \"Persistence, PrivilegeEscalation\",\r\n    \"PA-003\", \"High-privilege permission granted to an application\", \"High\", \"Persistence, PrivilegeEscalation, CredentialAccess\",\r\n    \"PA-004\", \"Conditional Access policy disabled, changed or deleted\", \"Medium\", \"DefenseEvasion, Persistence\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Account added to a privileged Entra ID role\", \"New secret or certificate added to an application or service principal\", \"High-privilege permission granted to an application\", \"Conditional Access policy disabled, changed or deleted\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Account added to a privileged Entra ID role\", \"New secret or certificate added to an application or service principal\", \"High-privilege permission granted to an application\", \"Conditional Access policy disabled, changed or deleted\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Account added to a privileged Entra ID role\", \"New secret or certificate added to an application or service principal\", \"High-privilege permission granted to an application\", \"Conditional Access policy disabled, changed or deleted\"]);\r\nlet RuleIds = dynamic([\"d79a8170-29af-56ee-820b-9e4157319bd0\", \"754eda29-7cbb-5047-8952-0284f53fbe9e\", \"875efad4-73cd-520e-a094-b258ef6d1c47\", \"c78ef28a-5a81-522e-ab02-0a890478049a\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

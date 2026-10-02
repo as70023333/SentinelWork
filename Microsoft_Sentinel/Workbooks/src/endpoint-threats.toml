@@ -1,0 +1,236 @@
+name = "Endpoint Threats"
+file = "EndpointThreats"
+area = "endpoint-threats"
+summary = "What Defender for Endpoint blocked and what it only recorded: detections, attack surface reduction, living-off-the-land tools, persistence, remote logon failures, Linux SSH"
+tables = ["DeviceEvents", "DeviceProcessEvents", "DeviceNetworkEvents", "DeviceRegistryEvents", "DeviceLogonEvents"]
+optional_tables = ["Syslog"]
+default_range = "7d"
+intro = """
+Defender for Endpoint telemetry from the devices, in two halves. **Overview** is what the product
+already acted on: antivirus detections, attack surface reduction (ASR) rules and network protection.
+**Hunting** is behaviour that is not blocked and is often legitimate, but is where an intruder shows
+up first: Windows tools that download or run code, new autorun entries, and logon failures from one
+address against many accounts.
+
+The **Linux** tab reads `Syslog` and stays empty if you do not collect it.
+"""
+
+[[tab]]
+name = "Overview"
+
+[[tab.item]]
+kind = "tiles"
+title = "Protection events in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+DeviceEvents
+| summarize Devices = dcount(DeviceId),
+            Detections = countif(ActionType == "AntivirusDetection"),
+            DevicesWithDetection = dcountif(DeviceId, ActionType == "AntivirusDetection"),
+            AsrBlocked = countif(ActionType startswith "Asr" and ActionType endswith "Blocked"),
+            AsrAudited = countif(ActionType startswith "Asr" and ActionType endswith "Audited"),
+            NetworkBlocked = countif(ActionType in ("ExploitGuardNetworkProtectionBlocked", "SmartScreenUrlWarning")),
+            Tampering = countif(ActionType == "TamperingAttempt")
+| project Tiles = pack_array(
+    bag_pack("Metric", "Devices reporting", "Value", Devices),
+    bag_pack("Metric", "Antivirus detections", "Value", Detections),
+    bag_pack("Metric", "Devices with a detection", "Value", DevicesWithDetection),
+    bag_pack("Metric", "ASR rule blocks", "Value", AsrBlocked),
+    bag_pack("Metric", "ASR rule audits (not blocked)", "Value", AsrAudited),
+    bag_pack("Metric", "Web and network protection blocks and warnings", "Value", NetworkBlocked),
+    bag_pack("Metric", "Tampering attempts", "Value", Tampering))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Protection events over time"
+query = '''
+DeviceEvents
+| extend Event = case(
+    ActionType == "AntivirusDetection", "Antivirus detection",
+    ActionType startswith "Asr" and ActionType endswith "Blocked", "ASR block",
+    ActionType startswith "Asr" and ActionType endswith "Audited", "ASR audit",
+    ActionType in ("ExploitGuardNetworkProtectionBlocked", "SmartScreenUrlWarning"), "Web or network block or warning",
+    ActionType == "TamperingAttempt", "Tampering attempt",
+    "")
+| where isnotempty(Event)
+| summarize Events = count() by bin(TimeGenerated, {TimeRange:grain}), Event
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Antivirus detections by threat"
+width = 50
+bars = ["Detections"]
+palette = "redBright"
+query = '''
+DeviceEvents
+| where ActionType == "AntivirusDetection"
+| extend Fields = parse_json(tostring(AdditionalFields))
+| summarize Detections = count(),
+            Devices = dcount(DeviceId),
+            ExampleFile = take_any(FileName),
+            LastSeen = max(TimeGenerated)
+            by Threat = tostring(Fields.ThreatName)
+| top 50 by Detections desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Attack surface reduction rules that fired"
+width = 50
+bars = ["Blocked"]
+heat = ["Audited"]
+query = '''
+DeviceEvents
+| where ActionType startswith "Asr"
+| extend AsrRule = replace_regex(ActionType, @"(Blocked|Audited|WarnBypassed)$", "")
+| summarize Blocked = countif(ActionType endswith "Blocked"),
+            Audited = countif(ActionType endswith "Audited"),
+            WarningBypassed = countif(ActionType endswith "WarnBypassed"),
+            Devices = dcount(DeviceId),
+            LastSeen = max(TimeGenerated)
+            by AsrRule
+| order by Blocked desc, Audited desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Devices with the most protection events"
+bars = ["Events"]
+query = '''
+DeviceEvents
+| where ActionType == "AntivirusDetection" or ActionType startswith "Asr"
+    or ActionType in ("ExploitGuardNetworkProtectionBlocked", "SmartScreenUrlWarning", "TamperingAttempt")
+| summarize Events = count(),
+            Detections = countif(ActionType == "AntivirusDetection"),
+            EventTypes = strcat_array(make_set(ActionType, 8), ", "),
+            LastSeen = max(TimeGenerated)
+            by Device = DeviceName
+| top 25 by Events desc
+'''
+
+[[tab]]
+name = "Hunting"
+
+[[tab.item]]
+kind = "text"
+text = """
+Nothing on this tab is an alert. Sort by **Devices**: a tool used on one or two devices, or by an
+account that is not an administrator, deserves a look before one used everywhere every day.
+"""
+
+[[tab.item]]
+kind = "table"
+title = "Windows tools that can download or run code"
+width = 50
+bars = ["Executions"]
+query = '''
+DeviceProcessEvents
+| where FileName in~ ("certutil.exe", "mshta.exe", "regsvr32.exe", "rundll32.exe", "bitsadmin.exe", "wscript.exe",
+                      "cscript.exe", "msbuild.exe", "installutil.exe", "wmic.exe", "psexec.exe", "psexesvc.exe")
+| summarize Executions = count(),
+            Devices = dcount(DeviceId),
+            Accounts = dcount(AccountName),
+            ExampleCommand = take_any(ProcessCommandLine),
+            LastSeen = max(TimeGenerated)
+            by Tool = tolower(FileName)
+| order by Devices asc, Executions desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Script hosts and system tools connecting to the internet"
+width = 50
+bars = ["Connections"]
+query = '''
+DeviceNetworkEvents
+| where RemoteIPType == "Public"
+| where InitiatingProcessFileName in~ ("powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe",
+                                       "rundll32.exe", "regsvr32.exe", "certutil.exe", "bitsadmin.exe", "msbuild.exe")
+| summarize Connections = count(),
+            Devices = dcount(DeviceId),
+            LastSeen = max(TimeGenerated)
+            by Process = tolower(InitiatingProcessFileName), Destination = iff(isnotempty(RemoteUrl), RemoteUrl, RemoteIP)
+| top 100 by Devices asc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Programs set to run at sign-in (Run and RunOnce keys)"
+query = '''
+DeviceRegistryEvents
+| where ActionType == "RegistryValueSet"
+| where RegistryKey matches regex @"(?i)\\CurrentVersion\\Run(Once)?$"
+| summarize Devices = dcount(DeviceId),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated),
+            SetBy = take_any(InitiatingProcessFileName),
+            ExampleDevice = take_any(DeviceName)
+            by ValueName = RegistryValueName, Program = RegistryValueData
+| order by Devices asc, LastSeen desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Remote logon failures by source address"
+bars = ["Failures"]
+heat = ["Accounts"]
+palette = "orange"
+query = '''
+DeviceLogonEvents
+| where ActionType == "LogonFailed" and isnotempty(RemoteIP)
+| where LogonType in ("Network", "RemoteInteractive")
+| summarize Failures = count(),
+            Accounts = dcount(AccountName),
+            Devices = dcount(DeviceId),
+            AddressType = take_any(RemoteIPType),
+            LastSeen = max(TimeGenerated)
+            by Source = RemoteIP
+| where Failures >= 10
+| top 50 by Failures desc
+'''
+
+[[tab]]
+name = "Linux"
+
+[[tab.item]]
+kind = "table"
+title = "SSH password failures by source address"
+width = 50
+bars = ["Failures"]
+palette = "orange"
+query = '''
+union isfuzzy=true
+    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),
+    (Syslog)
+| where Facility in ("auth", "authpriv") and SyslogMessage has "Failed password"
+| extend Source = extract(@"from (\S+) port", 1, SyslogMessage),
+         Account = extract(@"for (?:invalid user )?(\S+) from", 1, SyslogMessage)
+| summarize Failures = count(),
+            Accounts = dcount(Account),
+            Hosts = dcount(Computer),
+            LastSeen = max(TimeGenerated)
+            by Source
+| top 50 by Failures desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Commands run with sudo"
+width = 50
+bars = ["Runs"]
+query = '''
+union isfuzzy=true
+    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),
+    (Syslog)
+| where ProcessName == "sudo" and SyslogMessage has "COMMAND="
+| extend Account = extract(@"^\s*(\S+)\s*:", 1, SyslogMessage),
+         Command = extract(@"COMMAND=(.*)$", 1, SyslogMessage)
+| summarize Runs = count(), LastSeen = max(TimeGenerated) by Host = Computer, Account, Command
+| top 100 by Runs desc
+'''

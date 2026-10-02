@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+kql-check/bin/
+kql-check/obj/

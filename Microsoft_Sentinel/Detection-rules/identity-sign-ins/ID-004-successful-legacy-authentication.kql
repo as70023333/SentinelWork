@@ -1,0 +1,49 @@
+// Title: Successful sign-in with legacy authentication
+// Id: ID-004
+// Severity: Medium
+// Tactics: InitialAccess
+// Techniques: T1078
+// Sub-techniques: T1078.004
+// Tables: SigninLogs, AADNonInteractiveUserSignInLogs
+// Frequency: PT1H
+// Period: PT2H
+// Entities: Account(FullName=UserPrincipalName, AadUserId=UserId); IP(Address=IPAddress)
+// Custom details: Protocols, SignIns, SignInTypes
+// Description: An account signed in successfully with a legacy protocol such as IMAP, POP, SMTP AUTH
+//   or Exchange ActiveSync. These protocols cannot do MFA, so a stolen password is all an attacker
+//   needs, which is why password sprays aim at them. Both interactive and non-interactive sign-ins
+//   are read; if the non-interactive table is not collected, the rule still runs on the other.
+// False positives: Printers and scanners that send mail with SMTP AUTH, old mail clients, and line of
+//   business applications that have not moved to modern authentication.
+// Tuning: Add known service accounts to AllowedAccounts, then block legacy authentication for
+//   everyone else with Conditional Access so this rule goes quiet.
+// Response: Confirm the device and address belong to the user. If not, reset the password and revoke
+//   sessions. Either way, move the account off the legacy protocol.
+// References: https://learn.microsoft.com/entra/identity/conditional-access/policy-block-legacy-authentication
+let AllowedAccounts = dynamic([]);
+union isfuzzy=true
+    (SigninLogs
+     | where TimeGenerated > ago(2h)
+     // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+     | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+     | where ResultType == "0"
+     | project TimeGenerated, ClientAppUsed, UserPrincipalName, UserId, IPAddress, AppDisplayName, Location,
+               SignInType = "Interactive"),
+    (AADNonInteractiveUserSignInLogs
+     | where TimeGenerated > ago(2h)
+     | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+     | where ResultType == "0"
+     | project TimeGenerated, ClientAppUsed, UserPrincipalName, UserId, IPAddress, AppDisplayName, Location,
+               SignInType = "Non-interactive")
+| where isnotempty(ClientAppUsed) and ClientAppUsed !in ("Browser", "Mobile Apps and Desktop clients")
+| where UserPrincipalName !in~ (AllowedAccounts)
+| summarize SignIns = count(),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated),
+            Protocols = strcat_array(make_set(ClientAppUsed, 10), ", "),
+            SignInTypes = strcat_array(make_set(SignInType, 2), ", "),
+            Applications = make_set(AppDisplayName, 10),
+            Country = take_any(Location)
+            by UserPrincipalName, UserId, IPAddress
+| project FirstSeen, LastSeen, UserPrincipalName, UserId, IPAddress, Country, Protocols, SignInTypes, SignIns,
+          Applications

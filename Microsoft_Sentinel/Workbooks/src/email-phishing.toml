@@ -1,0 +1,231 @@
+name = "Email and Phishing"
+file = "EmailAndPhishing"
+area = "email-phishing"
+summary = "Threat mail in and out of the filter: what was caught, what was delivered anyway, who clicked, and what was removed afterwards"
+tables = ["EmailEvents", "UrlClickEvents", "EmailPostDeliveryEvents", "CloudAppEvents"]
+default_range = "7d"
+intro = """
+Defender for Office 365 data, following a malicious message through its life: arrival and verdict
+(**Overview**), the user's click (**Clicks**), and what happened after delivery, including mailbox
+rules that forward or hide mail (**After delivery**).
+
+The number to watch is **Threat mail delivered**: messages the filter identified as phishing or
+malware that still reached a mailbox, usually because an allow list or override let them through.
+"""
+
+[[tab]]
+name = "Overview"
+
+[[tab.item]]
+kind = "tiles"
+title = "Inbound mail in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+EmailEvents
+| where EmailDirection == "Inbound"
+| summarize Messages = count(),
+            Phishing = countif(ThreatTypes has "Phish"),
+            Malware = countif(ThreatTypes has "Malware"),
+            Spam = countif(ThreatTypes has "Spam"),
+            DeliveredThreats = countif(ThreatTypes has_any ("Phish", "Malware") and DeliveryAction == "Delivered"),
+            Blocked = countif(DeliveryAction == "Blocked"),
+            Targeted = dcountif(RecipientEmailAddress, ThreatTypes has_any ("Phish", "Malware"))
+| project Tiles = pack_array(
+    bag_pack("Metric", "Inbound messages", "Value", Messages),
+    bag_pack("Metric", "Phishing", "Value", Phishing),
+    bag_pack("Metric", "Malware", "Value", Malware),
+    bag_pack("Metric", "Spam", "Value", Spam),
+    bag_pack("Metric", "Threat mail delivered", "Value", DeliveredThreats),
+    bag_pack("Metric", "Messages blocked", "Value", Blocked),
+    bag_pack("Metric", "Recipients sent phishing or malware", "Value", Targeted))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Threat mail over time"
+width = 67
+colours = { Phishing = "redBright", Malware = "purple", Spam = "gray" }
+query = '''
+EmailEvents
+| where EmailDirection == "Inbound" and isnotempty(ThreatTypes)
+| extend Threat = case(ThreatTypes has "Malware", "Malware", ThreatTypes has "Phish", "Phishing", ThreatTypes has "Spam", "Spam", "Other")
+| summarize Messages = count() by bin(TimeGenerated, {TimeRange:grain}), Threat
+'''
+
+[[tab.item]]
+kind = "piechart"
+title = "What happened to phishing and malware mail"
+width = 33
+query = '''
+EmailEvents
+| where EmailDirection == "Inbound" and ThreatTypes has_any ("Phish", "Malware")
+| summarize Messages = count() by Outcome = strcat(DeliveryAction, " (", DeliveryLocation, ")")
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Most targeted recipients"
+width = 50
+bars = ["ThreatMessages"]
+heat = ["Delivered"]
+palette = "redBright"
+query = '''
+EmailEvents
+| where EmailDirection == "Inbound" and ThreatTypes has_any ("Phish", "Malware")
+| summarize ThreatMessages = count(),
+            Phishing = countif(ThreatTypes has "Phish"),
+            Malware = countif(ThreatTypes has "Malware"),
+            Delivered = countif(DeliveryAction == "Delivered"),
+            LastSeen = max(TimeGenerated)
+            by Recipient = RecipientEmailAddress
+| top 50 by ThreatMessages desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Sender domains of phishing and malware"
+width = 50
+bars = ["ThreatMessages"]
+heat = ["Delivered"]
+palette = "redBright"
+query = '''
+EmailEvents
+| where EmailDirection == "Inbound" and ThreatTypes has_any ("Phish", "Malware")
+| summarize ThreatMessages = count(),
+            Recipients = dcount(RecipientEmailAddress),
+            Delivered = countif(DeliveryAction == "Delivered"),
+            ExampleSubject = take_any(Subject),
+            LastSeen = max(TimeGenerated)
+            by SenderDomain = SenderFromDomain
+| top 50 by ThreatMessages desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Threat mail that was delivered, and the policy that allowed it"
+query = '''
+EmailEvents
+| where EmailDirection == "Inbound" and ThreatTypes has_any ("Phish", "Malware") and DeliveryAction == "Delivered"
+| project TimeGenerated,
+          Recipient = RecipientEmailAddress,
+          Sender = SenderFromAddress,
+          Subject,
+          Threat = ThreatTypes,
+          Location = DeliveryLocation,
+          OrgOverride = strcat(OrgLevelAction, " ", OrgLevelPolicy),
+          UserOverride = strcat(UserLevelAction, " ", UserLevelPolicy),
+          NetworkMessageId
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab]]
+name = "Clicks"
+
+[[tab.item]]
+kind = "tiles"
+title = "Safe Links clicks in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+UrlClickEvents
+| summarize Clicks = count(),
+            Malicious = countif(isnotempty(ThreatTypes)),
+            Reached = countif(isnotempty(ThreatTypes) and (ActionType == "ClickAllowed" or IsClickedThrough == true)),
+            Stopped = countif(ActionType startswith "ClickBlocked" and coalesce(IsClickedThrough, false) == false),
+            Users = dcountif(AccountUpn, isnotempty(ThreatTypes))
+| project Tiles = pack_array(
+    bag_pack("Metric", "Clicks", "Value", Clicks),
+    bag_pack("Metric", "Clicks on malicious URLs", "Value", Malicious),
+    bag_pack("Metric", "Malicious pages reached", "Value", Reached),
+    bag_pack("Metric", "Clicks blocked", "Value", Stopped),
+    bag_pack("Metric", "Users who clicked a malicious URL", "Value", Users))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Clicks on malicious URLs over time, by what Safe Links did"
+query = '''
+UrlClickEvents
+| where isnotempty(ThreatTypes)
+| summarize Clicks = count() by bin(TimeGenerated, {TimeRange:grain}), Action = ActionType
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Clicks on malicious URLs"
+query = '''
+UrlClickEvents
+| where isnotempty(ThreatTypes)
+| project TimeGenerated,
+          Account = AccountUpn,
+          Url,
+          Threat = ThreatTypes,
+          Action = ActionType,
+          ReachedPage = ActionType == "ClickAllowed" or coalesce(IsClickedThrough, false),
+          Workload,
+          Address = IPAddress,
+          NetworkMessageId
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab]]
+name = "After delivery"
+
+[[tab.item]]
+kind = "table"
+title = "Actions on mail after delivery"
+width = 40
+bars = ["Messages"]
+query = '''
+EmailPostDeliveryEvents
+| summarize Messages = count(), Recipients = dcount(RecipientEmailAddress), LastSeen = max(TimeGenerated)
+            by Type = ActionType, Action, Result = ActionResult
+| order by Messages desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Messages removed after delivery"
+width = 60
+query = '''
+EmailPostDeliveryEvents
+| where ActionType has "ZAP" or ActionType has "remediation"
+| project TimeGenerated,
+          Recipient = RecipientEmailAddress,
+          Sender = SenderFromAddress,
+          Type = ActionType,
+          Action,
+          Result = ActionResult,
+          Threat = ThreatTypes,
+          NetworkMessageId
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Inbox rules created or changed"
+query = '''
+CloudAppEvents
+| where ActionType in~ ("New-InboxRule", "Set-InboxRule")
+| mv-apply Parameter = RawEventData.Parameters on (
+    summarize Settings = make_bag(bag_pack(tostring(Parameter.Name), tostring(Parameter.Value))))
+| project TimeGenerated,
+          Account = tostring(RawEventData.UserId),
+          Operation = ActionType,
+          RuleName = tostring(Settings.Name),
+          ForwardsTo = coalesce(tostring(Settings.ForwardTo), tostring(Settings.ForwardAsAttachmentTo), tostring(Settings.RedirectTo)),
+          MovesTo = tostring(Settings.MoveToFolder),
+          Deletes = tostring(Settings.DeleteMessage),
+          Address = IPAddress,
+          Country = CountryCode
+| order by TimeGenerated desc
+| take 250
+'''

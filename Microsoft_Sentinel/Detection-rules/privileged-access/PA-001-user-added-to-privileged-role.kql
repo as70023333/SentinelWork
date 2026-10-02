@@ -1,0 +1,64 @@
+// Title: Account added to a privileged Entra ID role
+// Id: PA-001
+// Severity: High
+// Tactics: Persistence, PrivilegeEscalation
+// Techniques: T1098
+// Sub-techniques: T1098.003
+// Tables: AuditLogs
+// Frequency: PT1H
+// Period: PT2H
+// Entities: Account(FullName=TargetAccount, AadUserId=TargetId); Account(FullName=Actor); IP(Address=ActorIP)
+// Custom details: RoleName, AssignmentType, Operation, TargetType
+// Description: A user, group or service principal was given one of the directory roles that can take
+//   over the tenant, either directly or as a permanent or eligible assignment through Privileged
+//   Identity Management (PIM). A user activating a role they already hold in PIM is not reported.
+// False positives: Planned changes by the identity team: a new administrator, a break-glass account,
+//   an access review outcome.
+// Tuning: Edit PrivilegedRoles to match the roles you treat as tier 0; the names must match the role
+//   names in your audit log exactly. Exclude the automation account that applies approved changes,
+//   if you have one, by adding it to AllowedActors.
+// Response: Confirm the change against a ticket with the person named in Actor. If nobody can
+//   account for it, remove the assignment, then treat the Actor account as compromised.
+// References: https://learn.microsoft.com/entra/identity/role-based-access-control/security-planning
+let PrivilegedRoles = dynamic([
+    "Global Administrator", "Privileged Role Administrator", "Privileged Authentication Administrator",
+    "Security Administrator", "Application Administrator", "Cloud Application Administrator",
+    "Conditional Access Administrator", "Authentication Administrator", "Authentication Policy Administrator",
+    "Hybrid Identity Administrator", "Domain Name Administrator", "External Identity Provider Administrator",
+    "Exchange Administrator", "SharePoint Administrator", "Intune Administrator", "User Administrator",
+    "Helpdesk Administrator", "Password Administrator", "Partner Tier2 Support"]);
+let AllowedActors = dynamic([]);
+let Direct = AuditLogs
+    | where TimeGenerated > ago(2h)
+    // Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where LoggedByService =~ "Core Directory" and Category =~ "RoleManagement" and Result =~ "success"
+    | where OperationName in~ ("Add member to role", "Add eligible member to role", "Add scoped member to role")
+    // PIM writes its own records for the same change; they are read below.
+    | where tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax")
+    | mv-apply Property = TargetResources[0].modifiedProperties on (
+        where tostring(Property.displayName) == "Role.DisplayName"
+        | project RoleName = trim(@'"', tostring(Property.newValue)))
+    | extend Target = TargetResources[0], AssignmentType = "Direct";
+let ThroughPim = AuditLogs
+    | where TimeGenerated > ago(2h)
+    | where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+    | where LoggedByService =~ "PIM" and Category =~ "RoleManagement" and Result =~ "success"
+    | where OperationName in~ (
+        "Add member to role in PIM completed (permanent)", "Add member to role in PIM completed (timebound)",
+        "Add eligible member to role in PIM completed (permanent)",
+        "Add eligible member to role in PIM completed (timebound)")
+    // In a PIM record the role is the first target and the account that receives it is the third.
+    | extend RoleName = tostring(TargetResources[0].displayName), Target = TargetResources[2], AssignmentType = "PIM";
+union Direct, ThroughPim
+| where RoleName in~ (PrivilegedRoles)
+| extend TargetAccount = coalesce(tostring(Target.userPrincipalName), tostring(Target.displayName)),
+         TargetId = tostring(Target.id),
+         TargetType = tostring(Target.type),
+         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+         // PIM records keep the address in the additional details, not on the user.
+         ActorIP = coalesce(tostring(InitiatedBy.user.ipAddress),
+                            extract(@'"key":"ipaddr","value":"([^"]+)"', 1, tostring(AdditionalDetails)))
+| where Actor !in~ (AllowedActors)
+| project TimeGenerated, RoleName, TargetAccount, TargetId, TargetType, AssignmentType, Operation = OperationName,
+          Actor, ActorIP, CorrelationId

@@ -1,0 +1,36 @@
+// Title: Azure diagnostic settings deleted
+// Id: AZ-001
+// Severity: Medium
+// Tactics: DefenseEvasion
+// Techniques: T1562
+// Sub-techniques: T1562.008
+// Tables: AzureActivity
+// Frequency: PT1H
+// Period: PT2H
+// Entities: Account(FullName=Caller); IP(Address=CallerIpAddress); AzureResource(ResourceId=ResourceId)
+// Custom details: Deletions, SubscriptionId
+// Description: A diagnostic setting was deleted from an Azure resource. Diagnostic settings are what
+//   send a resource's logs to the workspace, so removing one stops the evidence for that resource
+//   (a key vault, a storage account, a firewall) from being collected.
+// False positives: Infrastructure as code that replaces a setting by deleting and recreating it, and
+//   resources being decommissioned.
+// Tuning: Exclude the deployment identity in AllowedCallers. Use Azure Policy to redeploy settings
+//   so a deletion repairs itself.
+// Response: Recreate the setting, then look at what the same caller did around that time; the
+//   deletion is usually preparation for something else.
+// References: https://learn.microsoft.com/azure/azure-monitor/essentials/diagnostic-settings
+let AllowedCallers = dynamic([]);
+AzureActivity
+| where TimeGenerated > ago(2h)
+// Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+| where OperationNameValue =~ "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE"
+| where ActivityStatusValue =~ "Success"
+| where Caller !in~ (AllowedCallers)
+| summarize Deletions = dcount(_ResourceId),
+            Resources = make_set(_ResourceId, 25),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated)
+            by Caller, CallerIpAddress, SubscriptionId
+| project FirstSeen, LastSeen, Caller, CallerIpAddress, SubscriptionId, Deletions, ResourceId = tostring(Resources[0]),
+          Resources

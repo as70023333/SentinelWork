@@ -1,0 +1,45 @@
+// Title: Successful sign-in from a country new for the user
+// Id: ID-003
+// Severity: Medium
+// Tactics: InitialAccess
+// Techniques: T1078
+// Sub-techniques: T1078.004
+// Tables: SigninLogs
+// Frequency: PT1H
+// Period: P14D
+// Entities: Account(FullName=UserPrincipalName, AadUserId=UserId); IP(Address=IPAddress)
+// Custom details: NewCountry, KnownCountries, SignIns
+// Description: A user signed in successfully from a country that none of their successful sign-ins
+//   came from in the previous 14 days. Users with no sign-in history in that time are left out, so
+//   a new starter does not alert on their first day.
+// False positives: Business travel and holidays; a VPN or mobile carrier that exits in another
+//   country; a user who has not signed in for more than 14 days.
+// Tuning: Add countries where you have offices to ExpectedCountries. Exclude accounts that travel
+//   constantly, or lower the severity and let the triage agent close the ones with a compliant device.
+// Response: Check the device, application and whether MFA was satisfied. Ask the user. If they are
+//   not travelling, revoke sessions and reset the password.
+// References: https://learn.microsoft.com/entra/identity/monitoring-health/concept-sign-ins
+let ExpectedCountries = dynamic([]);
+// Everything that arrived before this run's rows: the two sets never overlap, so a sign-in that
+// has been reported is part of the history at the next run and is not reported again.
+let Known = SigninLogs
+    | where TimeGenerated > ago(14d)
+    | where ingestion_time() <= ago(65m)
+    | where ResultType == "0" and isnotempty(Location)
+    | summarize by UserId, Location;
+let History = Known
+    | summarize KnownCountries = strcat_array(make_set(Location, 20), ", ") by UserId;
+SigninLogs
+| where TimeGenerated > ago(14d)
+// Rows are chosen by when they reached the workspace, so one that arrives late is not missed.
+| where ingestion_time() > ago(65m) and ingestion_time() <= ago(5m)
+| where ResultType == "0" and isnotempty(Location)
+| where Location !in (ExpectedCountries)
+| join kind=leftanti Known on UserId, Location
+| join kind=inner History on UserId
+| summarize SignIns = count(),
+            Applications = make_set(AppDisplayName, 10),
+            arg_min(TimeGenerated, UserPrincipalName, IPAddress, KnownCountries, UserAgent)
+            by UserId, NewCountry = Location
+| project FirstSeen = TimeGenerated, UserPrincipalName, UserId, IPAddress, NewCountry, KnownCountries, SignIns,
+          Applications, UserAgent

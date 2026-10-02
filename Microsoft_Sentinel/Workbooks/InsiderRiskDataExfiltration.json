@@ -1,0 +1,831 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Insider Risk and Data Exfiltration\n\nThree ways data leaves, one tab each. **Network** reads the firewall (`CommonSecurityLog`) for large\nuploads from internal addresses to the internet. **Devices** reads Defender for Endpoint for USB\ndrives, files written to them, and transfer tools. **Cloud** reads Microsoft 365 activity for bulk\ndownloads and sharing links.\n\nNone of this proves intent. It shows who and what to ask about, and how much data is involved.\n\n**Tables read:** `CommonSecurityLog`, `DeviceEvents`, `DeviceFileEvents`, `DeviceProcessEvents`, `DeviceNetworkEvents`, `CloudAppEvents`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "d8eb85a2-bb99-503a-8f53-0e8de7cfaed6",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "8278d94d-f66e-5d78-8bad-241527a36601",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Network",
+            "subTarget": "Network",
+            "style": "link"
+          },
+          {
+            "id": "43ea7f35-1ff0-5a68-9727-701a7c386492",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Devices",
+            "subTarget": "Devices",
+            "style": "link"
+          },
+          {
+            "id": "f5d7c5b4-748f-52b2-983c-015c8cfa48e9",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Cloud",
+            "subTarget": "Cloud",
+            "style": "link"
+          },
+          {
+            "id": "b5d9bd12-ecd5-5770-bcab-b963a60f3809",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union isfuzzy=true\r\n    (CommonSecurityLog\r\n     | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false\r\n     | summarize Value = round(sum(SentBytes) / 1073741824.0, 1)\r\n     | extend Metric = \"GB sent to the internet (firewall)\", Position = 1),\r\n    (DeviceEvents\r\n     | where ActionType == \"UsbDriveMounted\"\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"USB drives mounted\", Position = 2),\r\n    (CloudAppEvents\r\n     | where ActionType in~ (\"FileDownloaded\", \"FileSyncDownloadedFull\")\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"Files downloaded from SharePoint and OneDrive\", Position = 3),\r\n    (CloudAppEvents\r\n     | where ActionType in~ (\"AnonymousLinkCreated\", \"SharingInvitationCreated\", \"SecureLinkCreated\", \"CompanyLinkCreated\",\r\n                             \"AddedToSecureLink\")\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"Sharing links and invitations created\", Position = 4)\r\n| order by Position asc\r\n| project Metric, Value",
+              "size": 4,
+              "title": "In the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "network-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "CommonSecurityLog\r\n| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false\r\n| summarize SentGB = round(sum(SentBytes) / 1073741824.0, 2) by bin(TimeGenerated, {TimeRange:grain})",
+              "size": 0,
+              "title": "Data sent from internal addresses to the internet (GB)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "areachart"
+            },
+            "customWidth": "100",
+            "name": "network-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "CommonSecurityLog\r\n| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false\r\n| summarize BytesSent = sum(SentBytes),\r\n            BytesReceived = sum(ReceivedBytes),\r\n            Destinations = dcount(DestinationIP),\r\n            User = take_any(SourceUserName)\r\n            by Source = SourceIP\r\n| extend SentGB = round(BytesSent / 1073741824.0, 2),\r\n         UploadRatio = round(todouble(BytesSent) / todouble(BytesReceived + 1), 1)\r\n| project Source, User, SentGB, UploadRatio, Destinations\r\n| top 25 by SentGB desc",
+              "size": 0,
+              "title": "Internal addresses that sent the most",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "SentGB",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "UploadRatio",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "network-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "CommonSecurityLog\r\n| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false\r\n| summarize BytesSent = sum(SentBytes),\r\n            Sources = dcount(SourceIP),\r\n            Host = take_any(DestinationHostName),\r\n            Ports = strcat_array(make_set(DestinationPort, 5), \", \")\r\n            by Destination = DestinationIP\r\n| extend SentGB = round(BytesSent / 1073741824.0, 2)\r\n| project Destination, Host, SentGB, Sources, Ports\r\n| top 25 by SentGB desc",
+              "size": 0,
+              "title": "Internet addresses that received the most",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "SentGB",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "network-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Network"
+      },
+      "name": "tab-network"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "DeviceEvents\r\n| where ActionType == \"UsbDriveMounted\"\r\n| extend Usb = parse_json(tostring(AdditionalFields))\r\n| summarize Mounts = count(), LastMounted = max(TimeGenerated)\r\n            by Device = DeviceName, Drive = tostring(Usb.ProductName), Serial = tostring(Usb.SerialNumber)\r\n| top 100 by Mounts desc",
+              "size": 0,
+              "title": "USB drives mounted",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Mounts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "devices-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Mounts = DeviceEvents\r\n    | where ActionType == \"UsbDriveMounted\"\r\n    | extend DriveLetter = toupper(substring(tostring(parse_json(tostring(AdditionalFields)).DriveLetter), 0, 2))\r\n    | where isnotempty(DriveLetter)\r\n    | summarize MountedAt = min(TimeGenerated) by DeviceId, DriveLetter;\r\nDeviceFileEvents\r\n| where ActionType == \"FileCreated\"\r\n| extend DriveLetter = toupper(substring(FolderPath, 0, 2))\r\n| join kind=inner Mounts on DeviceId, DriveLetter\r\n| where TimeGenerated >= MountedAt\r\n| summarize Files = dcount(FolderPath),\r\n            TotalMB = round(sum(FileSize) / 1048576.0, 1),\r\n            Examples = strcat_array(make_set(FileName, 5), \", \"),\r\n            LastCopy = max(TimeGenerated)\r\n            by Account = InitiatingProcessAccountName, Device = DeviceName\r\n| top 50 by Files desc",
+              "size": 0,
+              "title": "Files written to removable media, by account",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Files",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "TotalMB",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "devices-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let TransferTools = dynamic([\"rclone.exe\", \"megasync.exe\", \"megacmd.exe\", \"megaclient.exe\", \"megacmdserver.exe\",\r\n                             \"winscp.exe\", \"winscp.com\", \"pscp.exe\", \"psftp.exe\", \"filezilla.exe\", \"restic.exe\",\r\n                             \"azcopy.exe\", \"gsutil.exe\"]);\r\nDeviceProcessEvents\r\n| where tolower(FileName) in (TransferTools) or tolower(ProcessVersionInfoOriginalFileName) in (TransferTools)\r\n| summarize Executions = count(),\r\n            Devices = dcount(DeviceId),\r\n            Accounts = strcat_array(make_set(AccountName, 5), \", \"),\r\n            ExampleCommand = take_any(ProcessCommandLine),\r\n            LastSeen = max(TimeGenerated)\r\n            by Tool = tolower(FileName)\r\n| order by Executions desc",
+              "size": 0,
+              "title": "Cloud copy and file transfer tools",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Executions",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "devices-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let SharingSites = dynamic([\"mega.nz\", \"mega.co.nz\", \"dropbox.com\", \"wetransfer.com\", \"transfer.sh\", \"anonfiles.com\",\r\n                            \"gofile.io\", \"pastebin.com\", \"file.io\", \"sendspace.com\", \"mediafire.com\", \"pcloud.com\",\r\n                            \"box.com\", \"drive.google.com\"]);\r\nDeviceNetworkEvents\r\n| where isnotempty(RemoteUrl) and RemoteUrl has_any (SharingSites)\r\n| summarize Connections = count(),\r\n            Devices = dcount(DeviceId),\r\n            Processes = strcat_array(make_set(InitiatingProcessFileName, 5), \", \"),\r\n            Accounts = strcat_array(make_set(InitiatingProcessAccountName, 5), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Site = RemoteUrl\r\n| top 50 by Connections desc",
+              "size": 0,
+              "title": "Connections to file sharing and paste sites",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Connections",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "devices-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Devices"
+      },
+      "name": "tab-devices"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "CloudAppEvents\r\n| where ActionType in~ (\"FileDownloaded\", \"FileSyncDownloadedFull\")\r\n| summarize Files = count() by bin(TimeGenerated, {TimeRange:grain}), Application",
+              "size": 0,
+              "title": "Files downloaded from SharePoint and OneDrive over time",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "cloud-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Downloads = CloudAppEvents\r\n    | where ActionType in~ (\"FileDownloaded\", \"FileSyncDownloadedFull\");\r\nlet Peaks = Downloads\r\n    | summarize HourlyFiles = dcount(ObjectName) by AccountObjectId, bin(TimeGenerated, 1h)\r\n    | summarize BusiestHour = max(HourlyFiles) by AccountObjectId;\r\nDownloads\r\n| summarize Files = dcount(ObjectName),\r\n            Sites = dcount(tostring(RawEventData.SiteUrl)),\r\n            Countries = strcat_array(make_set(CountryCode, 5), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by AccountObjectId, Account = AccountDisplayName\r\n| join kind=inner Peaks on AccountObjectId\r\n| project Account, Files, BusiestHour, Sites, Countries, LastSeen\r\n| top 50 by Files desc",
+              "size": 0,
+              "title": "Accounts that downloaded the most files",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Files",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  },
+                  {
+                    "columnMatch": "BusiestHour",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "cloud-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "CloudAppEvents\r\n| where ActionType in~ (\"AnonymousLinkCreated\", \"SharingInvitationCreated\", \"SecureLinkCreated\", \"CompanyLinkCreated\",\r\n                        \"AddedToSecureLink\")\r\n| summarize Shares = count(),\r\n            AnonymousLinks = countif(ActionType =~ \"AnonymousLinkCreated\"),\r\n            ExternalInvitations = countif(ActionType =~ \"SharingInvitationCreated\"),\r\n            Items = dcount(ObjectName),\r\n            LastSeen = max(TimeGenerated)\r\n            by Account = AccountDisplayName\r\n| top 50 by Shares desc",
+              "size": 0,
+              "title": "Sharing links and invitations, by account",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Shares",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  },
+                  {
+                    "columnMatch": "AnonymousLinks",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "cloud-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Cloud"
+      },
+      "name": "tab-cloud"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"EX-001\", \"Large outbound transfer to one external address\", \"Medium\", \"Exfiltration\",\r\n    \"EX-002\", \"Many files copied to removable media\", \"Medium\", \"Exfiltration\",\r\n    \"EX-003\", \"Mass download from SharePoint or OneDrive\", \"Medium\", \"Collection, Exfiltration\",\r\n    \"EX-004\", \"Cloud copy or file transfer tool executed\", \"Medium\", \"Exfiltration\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Large outbound transfer to one external address\", \"Many files copied to removable media\", \"Mass download from SharePoint or OneDrive\", \"Cloud copy or file transfer tool executed\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Large outbound transfer to one external address\", \"Many files copied to removable media\", \"Mass download from SharePoint or OneDrive\", \"Cloud copy or file transfer tool executed\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Large outbound transfer to one external address\", \"Many files copied to removable media\", \"Mass download from SharePoint or OneDrive\", \"Cloud copy or file transfer tool executed\"]);\r\nlet RuleIds = dynamic([\"6805bf8b-47c4-5553-a5be-c6e47c4bb2ca\", \"7f9301b9-112c-59f5-b790-994eadfedf83\", \"8c637be0-b121-5f68-a4c1-d99d0a10a160\", \"6f962748-3af3-5613-9780-4f03271f8bff\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
