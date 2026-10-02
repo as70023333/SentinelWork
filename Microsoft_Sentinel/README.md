@@ -5,6 +5,7 @@ Workbooks, cost monitoring and the **Autonomous SOC Analyst** multi-agent build-
 | Folder | Contents |
 |---|---|
 | [Agents](Agents/) | The Autonomous SOC Analyst: runnable project ([Autonomous_SOC_Analyst](Agents/Autonomous_SOC_Analyst/)), Tier-1 core agents (built) and Tier-2 advanced agents (planned) |
+| [Detection Rules](Detection-rules/) | COMING SOON |
 | [Deployment](Deployment/) | Logic App playbooks, Azure Automation runbooks, infrastructure and app-registration setup |
 | [Workbooks](Workbooks/) | Sentinel workbooks: Azure cost, data connector cost, ingestion latency |
 | [Cost_Monitoring](Cost_Monitoring/) | Cost and volume canary definitions |
