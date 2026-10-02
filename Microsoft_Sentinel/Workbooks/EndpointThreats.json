@@ -483,7 +483,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "Syslog\r\n| where Facility in (\"auth\", \"authpriv\") and SyslogMessage has \"Failed password\"\r\n| extend Source = extract(@\"from (\\S+) port\", 1, SyslogMessage),\r\n         Account = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\r\n| summarize Failures = count(),\r\n            Accounts = dcount(Account),\r\n            Hosts = dcount(Computer),\r\n            LastSeen = max(TimeGenerated)\r\n            by Source\r\n| top 50 by Failures desc",
+              "query": "union isfuzzy=true\r\n    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),\r\n    (Syslog)\r\n| where Facility in (\"auth\", \"authpriv\") and SyslogMessage has \"Failed password\"\r\n| extend Source = extract(@\"from (\\S+) port\", 1, SyslogMessage),\r\n         Account = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\r\n| summarize Failures = count(),\r\n            Accounts = dcount(Account),\r\n            Hosts = dcount(Computer),\r\n            LastSeen = max(TimeGenerated)\r\n            by Source\r\n| top 50 by Failures desc",
               "size": 0,
               "title": "SSH password failures by source address",
               "noDataMessage": "No data in the selected time range.",
@@ -519,7 +519,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "Syslog\r\n| where ProcessName == \"sudo\" and SyslogMessage has \"COMMAND=\"\r\n| extend Account = extract(@\"^\\s*(\\S+)\\s*:\", 1, SyslogMessage),\r\n         Command = extract(@\"COMMAND=(.*)$\", 1, SyslogMessage)\r\n| summarize Runs = count(), LastSeen = max(TimeGenerated) by Host = Computer, Account, Command\r\n| top 100 by Runs desc",
+              "query": "union isfuzzy=true\r\n    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),\r\n    (Syslog)\r\n| where ProcessName == \"sudo\" and SyslogMessage has \"COMMAND=\"\r\n| extend Account = extract(@\"^\\s*(\\S+)\\s*:\", 1, SyslogMessage),\r\n         Command = extract(@\"COMMAND=(.*)$\", 1, SyslogMessage)\r\n| summarize Runs = count(), LastSeen = max(TimeGenerated) by Host = Computer, Account, Command\r\n| top 100 by Runs desc",
               "size": 0,
               "title": "Commands run with sudo",
               "noDataMessage": "No data in the selected time range.",

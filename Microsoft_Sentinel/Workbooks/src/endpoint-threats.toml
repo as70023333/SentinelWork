@@ -204,7 +204,9 @@ width = 50
 bars = ["Failures"]
 palette = "orange"
 query = '''
-Syslog
+union isfuzzy=true
+    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),
+    (Syslog)
 | where Facility in ("auth", "authpriv") and SyslogMessage has "Failed password"
 | extend Source = extract(@"from (\S+) port", 1, SyslogMessage),
          Account = extract(@"for (?:invalid user )?(\S+) from", 1, SyslogMessage)
@@ -222,7 +224,9 @@ title = "Commands run with sudo"
 width = 50
 bars = ["Runs"]
 query = '''
-Syslog
+union isfuzzy=true
+    (datatable(TimeGenerated:datetime, Computer:string, Facility:string, ProcessName:string, SyslogMessage:string) []),
+    (Syslog)
 | where ProcessName == "sudo" and SyslogMessage has "COMMAND="
 | extend Account = extract(@"^\s*(\S+)\s*:", 1, SyslogMessage),
          Command = extract(@"COMMAND=(.*)$", 1, SyslogMessage)
