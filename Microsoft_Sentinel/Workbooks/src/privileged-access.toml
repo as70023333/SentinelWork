@@ -1,0 +1,212 @@
+name = "Privileged Access Changes"
+file = "PrivilegedAccessChanges"
+area = "privileged-access"
+summary = "Changes that grant power in Entra ID: role assignments, application credentials and permissions, Conditional Access, MFA methods"
+tables = ["AuditLogs"]
+default_range = "14d"
+intro = """
+The Entra ID audit log, filtered to the changes an attacker makes to gain or keep privileged access
+and that an administrator makes rarely enough to review: directory role assignments, new secrets and
+permissions on applications, Conditional Access policy edits, security info (MFA method) changes and
+password resets done by an administrator.
+
+Every row names the **Actor** (who made the change). An actor you do not expect is the thing to look for.
+"""
+
+[[tab]]
+name = "Overview"
+
+[[tab.item]]
+kind = "tiles"
+title = "Privileged changes in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+AuditLogs
+| where Result =~ "success"
+| summarize RoleChanges = countif(Category =~ "RoleManagement" and OperationName has "member"),
+            AppCredentials = countif(OperationName has "Certificates and secrets management"
+                                     or OperationName has "service principal credentials"),
+            Grants = countif(OperationName in~ ("Consent to application", "Add app role assignment to service principal",
+                                                "Add delegated permission grant")),
+            PolicyChanges = countif(OperationName has "conditional access policy"),
+            SecurityInfo = countif(OperationName has "security info"),
+            AdminResets = countif(OperationName in~ ("Reset user password", "Reset password (by admin)"))
+| project Tiles = pack_array(
+    bag_pack("Metric", "Role membership changes", "Value", RoleChanges),
+    bag_pack("Metric", "Application credential changes", "Value", AppCredentials),
+    bag_pack("Metric", "Consents and permission grants", "Value", Grants),
+    bag_pack("Metric", "Conditional Access policy changes", "Value", PolicyChanges),
+    bag_pack("Metric", "Security info (MFA method) changes", "Value", SecurityInfo),
+    bag_pack("Metric", "Passwords reset by an administrator", "Value", AdminResets))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Privileged changes over time, by type"
+query = '''
+AuditLogs
+| where Result =~ "success"
+| extend Change = case(
+    Category =~ "RoleManagement" and OperationName has "member", "Role membership",
+    OperationName has "Certificates and secrets management" or OperationName has "service principal credentials", "Application credentials",
+    OperationName in~ ("Consent to application", "Add app role assignment to service principal", "Add delegated permission grant"), "Consents and permissions",
+    OperationName has "conditional access policy", "Conditional Access",
+    OperationName has "security info", "Security info",
+    OperationName in~ ("Reset user password", "Reset password (by admin)"), "Admin password resets",
+    "")
+| where isnotempty(Change)
+| summarize Changes = count() by bin(TimeGenerated, {TimeRange:grain}), Change
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Who made privileged changes"
+width = 60
+bars = ["Changes"]
+query = '''
+AuditLogs
+| where Result =~ "success"
+| extend Change = case(
+    Category =~ "RoleManagement" and OperationName has "member", "Role membership",
+    OperationName has "Certificates and secrets management" or OperationName has "service principal credentials", "Application credentials",
+    OperationName in~ ("Consent to application", "Add app role assignment to service principal", "Add delegated permission grant"), "Consents and permissions",
+    OperationName has "conditional access policy", "Conditional Access",
+    OperationName in~ ("Reset user password", "Reset password (by admin)"), "Admin password resets",
+    "")
+| where isnotempty(Change)
+| extend Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName), "unknown")
+| summarize Changes = count(),
+            Types = strcat_array(make_set(Change, 6), ", "),
+            Addresses = strcat_array(make_set(tostring(InitiatedBy.user.ipAddress), 5), ", "),
+            LastChange = max(TimeGenerated)
+            by Actor
+| top 50 by Changes desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Privileged operations that failed"
+width = 40
+bars = ["Attempts"]
+palette = "orange"
+query = '''
+AuditLogs
+| where Result =~ "failure"
+| where Category in~ ("RoleManagement", "ApplicationManagement", "Policy")
+| extend Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName), "unknown")
+| summarize Attempts = count(), LastAttempt = max(TimeGenerated), Reason = take_any(ResultDescription)
+            by Actor, Operation = OperationName
+| top 50 by Attempts desc
+'''
+
+[[tab]]
+name = "Roles"
+
+[[tab.item]]
+kind = "table"
+title = "Directory role membership changes (direct)"
+query = '''
+AuditLogs
+| where LoggedByService =~ "Core Directory" and Category =~ "RoleManagement" and Result =~ "success"
+| where OperationName has "member"
+| mv-apply Property = TargetResources[0].modifiedProperties on (
+    where tostring(Property.displayName) == "Role.DisplayName"
+    | project Role = trim(@'"', coalesce(tostring(Property.newValue), tostring(Property.oldValue))))
+| project TimeGenerated,
+          Operation = OperationName,
+          Role,
+          Target = coalesce(tostring(TargetResources[0].userPrincipalName), tostring(TargetResources[0].displayName)),
+          TargetType = tostring(TargetResources[0].type),
+          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+          ActorAddress = tostring(InitiatedBy.user.ipAddress)
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Role assignments and activations through Privileged Identity Management"
+query = '''
+AuditLogs
+| where LoggedByService =~ "PIM" and Category =~ "RoleManagement" and Result =~ "success"
+| where OperationName has "completed"
+| project TimeGenerated,
+          Operation = OperationName,
+          Role = tostring(TargetResources[0].displayName),
+          Target = coalesce(tostring(TargetResources[2].userPrincipalName), tostring(TargetResources[2].displayName)),
+          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+          Justification = ResultReason
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Roles granted most often"
+query = '''
+AuditLogs
+| where LoggedByService =~ "PIM" and Category =~ "RoleManagement" and Result =~ "success"
+| where OperationName has "completed" and OperationName has "Add"
+| summarize Grants = count() by Role = tostring(TargetResources[0].displayName)
+| top 15 by Grants desc
+'''
+
+[[tab]]
+name = "Applications and policy"
+
+[[tab.item]]
+kind = "table"
+title = "Secrets, certificates and permissions added to applications"
+query = '''
+AuditLogs
+| where LoggedByService =~ "Core Directory" and Result =~ "success"
+| where OperationName has "Certificates and secrets management"
+    or OperationName has "service principal credentials"
+    or OperationName in~ ("Consent to application", "Add app role assignment to service principal",
+                          "Add delegated permission grant", "Add owner to application", "Add owner to service principal")
+| project TimeGenerated,
+          Operation = OperationName,
+          Application = tostring(TargetResources[0].displayName),
+          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+          ActorAddress = tostring(InitiatedBy.user.ipAddress),
+          Changed = tostring(TargetResources[0].modifiedProperties)
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Conditional Access policy changes"
+width = 50
+query = '''
+AuditLogs
+| where Category =~ "Policy" and Result =~ "success"
+| where OperationName has "conditional access policy"
+| project TimeGenerated,
+          Operation = OperationName,
+          Policy = tostring(TargetResources[0].displayName),
+          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+          ActorAddress = tostring(InitiatedBy.user.ipAddress)
+| order by TimeGenerated desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Security info changes and passwords reset by an administrator"
+width = 50
+query = '''
+AuditLogs
+| where Result =~ "success"
+| where OperationName has "security info" or OperationName in~ ("Reset user password", "Reset password (by admin)")
+| project TimeGenerated,
+          Operation = OperationName,
+          Account = coalesce(tostring(TargetResources[0].userPrincipalName), tostring(TargetResources[0].displayName)),
+          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+          ActorAddress = tostring(InitiatedBy.user.ipAddress)
+| order by TimeGenerated desc
+| take 250
+'''

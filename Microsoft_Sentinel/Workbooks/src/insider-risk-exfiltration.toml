@@ -1,0 +1,228 @@
+name = "Insider Risk and Data Exfiltration"
+file = "InsiderRiskDataExfiltration"
+area = "insider-risk-exfiltration"
+summary = "Data leaving by the network, by USB and by cloud download or sharing, with the people and devices behind it"
+tables = ["CommonSecurityLog", "DeviceEvents", "DeviceFileEvents", "DeviceProcessEvents", "DeviceNetworkEvents", "CloudAppEvents"]
+default_range = "7d"
+intro = """
+Three ways data leaves, one tab each. **Network** reads the firewall (`CommonSecurityLog`) for large
+uploads from internal addresses to the internet. **Devices** reads Defender for Endpoint for USB
+drives, files written to them, and transfer tools. **Cloud** reads Microsoft 365 activity for bulk
+downloads and sharing links.
+
+None of this proves intent. It shows who and what to ask about, and how much data is involved.
+"""
+
+[[tab]]
+name = "Network"
+
+[[tab.item]]
+kind = "tiles"
+title = "In the time range"
+label = "Metric"
+value = "Value"
+query = '''
+union isfuzzy=true
+    (CommonSecurityLog
+     | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+     | summarize Value = round(sum(SentBytes) / 1073741824.0, 1)
+     | extend Metric = "GB sent to the internet (firewall)", Position = 1),
+    (DeviceEvents
+     | where ActionType == "UsbDriveMounted"
+     | summarize Value = todouble(count())
+     | extend Metric = "USB drives mounted", Position = 2),
+    (CloudAppEvents
+     | where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull")
+     | summarize Value = todouble(count())
+     | extend Metric = "Files downloaded from SharePoint and OneDrive", Position = 3),
+    (CloudAppEvents
+     | where ActionType in~ ("AnonymousLinkCreated", "SharingInvitationCreated", "SecureLinkCreated", "CompanyLinkCreated")
+     | summarize Value = todouble(count())
+     | extend Metric = "Sharing links and invitations created", Position = 4)
+| order by Position asc
+| project Metric, Value
+'''
+
+[[tab.item]]
+kind = "areachart"
+title = "Data sent from internal addresses to the internet (GB)"
+query = '''
+CommonSecurityLog
+| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+| summarize SentGB = round(sum(SentBytes) / 1073741824.0, 2) by bin(TimeGenerated, {TimeRange:grain})
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Internal addresses that sent the most"
+width = 50
+bars = ["SentGB"]
+heat = ["UploadRatio"]
+query = '''
+CommonSecurityLog
+| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+| summarize BytesSent = sum(SentBytes),
+            BytesReceived = sum(ReceivedBytes),
+            Destinations = dcount(DestinationIP),
+            User = take_any(SourceUserName)
+            by Source = SourceIP
+| extend SentGB = round(BytesSent / 1073741824.0, 2),
+         UploadRatio = round(todouble(BytesSent) / todouble(BytesReceived + 1), 1)
+| project Source, User, SentGB, UploadRatio, Destinations
+| top 25 by SentGB desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Internet addresses that received the most"
+width = 50
+bars = ["SentGB"]
+query = '''
+CommonSecurityLog
+| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+| summarize BytesSent = sum(SentBytes),
+            Sources = dcount(SourceIP),
+            Host = take_any(DestinationHostName),
+            Ports = strcat_array(make_set(DestinationPort, 5), ", ")
+            by Destination = DestinationIP
+| extend SentGB = round(BytesSent / 1073741824.0, 2)
+| project Destination, Host, SentGB, Sources, Ports
+| top 25 by SentGB desc
+'''
+
+[[tab]]
+name = "Devices"
+
+[[tab.item]]
+kind = "table"
+title = "USB drives mounted"
+width = 50
+bars = ["Mounts"]
+query = '''
+DeviceEvents
+| where ActionType == "UsbDriveMounted"
+| extend Usb = parse_json(tostring(AdditionalFields))
+| summarize Mounts = count(), LastMounted = max(TimeGenerated)
+            by Device = DeviceName, Drive = tostring(Usb.ProductName), Serial = tostring(Usb.SerialNumber)
+| top 100 by Mounts desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Files written to removable media, by account"
+width = 50
+bars = ["Files"]
+heat = ["TotalMB"]
+query = '''
+let Mounts = DeviceEvents
+    | where ActionType == "UsbDriveMounted"
+    | extend DriveLetter = toupper(substring(tostring(parse_json(tostring(AdditionalFields)).DriveLetter), 0, 2))
+    | where isnotempty(DriveLetter)
+    | summarize MountedAt = min(TimeGenerated) by DeviceId, DriveLetter;
+DeviceFileEvents
+| where ActionType == "FileCreated"
+| extend DriveLetter = toupper(substring(FolderPath, 0, 2))
+| join kind=inner Mounts on DeviceId, DriveLetter
+| where TimeGenerated >= MountedAt
+| summarize Files = dcount(FolderPath),
+            TotalMB = round(sum(FileSize) / 1048576.0, 1),
+            Examples = strcat_array(make_set(FileName, 5), ", "),
+            LastCopy = max(TimeGenerated)
+            by Account = InitiatingProcessAccountName, Device = DeviceName
+| top 50 by Files desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Cloud copy and file transfer tools"
+width = 50
+bars = ["Executions"]
+query = '''
+let TransferTools = dynamic(["rclone.exe", "megasync.exe", "megacmd.exe", "megaclient.exe", "megacmdserver.exe",
+                             "winscp.exe", "winscp.com", "pscp.exe", "psftp.exe", "filezilla.exe", "restic.exe",
+                             "azcopy.exe", "gsutil.exe"]);
+DeviceProcessEvents
+| where tolower(FileName) in (TransferTools) or tolower(ProcessVersionInfoOriginalFileName) in (TransferTools)
+| summarize Executions = count(),
+            Devices = dcount(DeviceId),
+            Accounts = strcat_array(make_set(AccountName, 5), ", "),
+            ExampleCommand = take_any(ProcessCommandLine),
+            LastSeen = max(TimeGenerated)
+            by Tool = tolower(FileName)
+| order by Executions desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Connections to file sharing and paste sites"
+width = 50
+bars = ["Connections"]
+query = '''
+let SharingSites = dynamic(["mega.nz", "mega.co.nz", "dropbox.com", "wetransfer.com", "transfer.sh", "anonfiles.com",
+                            "gofile.io", "pastebin.com", "file.io", "sendspace.com", "mediafire.com", "pcloud.com",
+                            "box.com", "drive.google.com"]);
+DeviceNetworkEvents
+| where isnotempty(RemoteUrl) and RemoteUrl has_any (SharingSites)
+| summarize Connections = count(),
+            Devices = dcount(DeviceId),
+            Processes = strcat_array(make_set(InitiatingProcessFileName, 5), ", "),
+            Accounts = strcat_array(make_set(InitiatingProcessAccountName, 5), ", "),
+            LastSeen = max(TimeGenerated)
+            by Site = RemoteUrl
+| top 50 by Connections desc
+'''
+
+[[tab]]
+name = "Cloud"
+
+[[tab.item]]
+kind = "barchart"
+title = "Files downloaded from SharePoint and OneDrive over time"
+query = '''
+CloudAppEvents
+| where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull")
+| summarize Files = count() by bin(TimeGenerated, {TimeRange:grain}), Application
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Accounts that downloaded the most files"
+width = 50
+bars = ["Files"]
+heat = ["BusiestHour"]
+query = '''
+let Downloads = CloudAppEvents
+    | where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull");
+let Peaks = Downloads
+    | summarize HourlyFiles = dcount(ObjectName) by AccountObjectId, bin(TimeGenerated, 1h)
+    | summarize BusiestHour = max(HourlyFiles) by AccountObjectId;
+Downloads
+| summarize Files = dcount(ObjectName),
+            Sites = dcount(tostring(RawEventData.SiteUrl)),
+            Countries = strcat_array(make_set(CountryCode, 5), ", "),
+            LastSeen = max(TimeGenerated)
+            by AccountObjectId, Account = AccountDisplayName
+| join kind=inner Peaks on AccountObjectId
+| project Account, Files, BusiestHour, Sites, Countries, LastSeen
+| top 50 by Files desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Sharing links and invitations, by account"
+width = 50
+bars = ["Shares"]
+heat = ["AnonymousLinks"]
+palette = "orange"
+query = '''
+CloudAppEvents
+| where ActionType in~ ("AnonymousLinkCreated", "SharingInvitationCreated", "SecureLinkCreated", "CompanyLinkCreated",
+                        "AddedToSecureLink")
+| summarize Shares = count(),
+            AnonymousLinks = countif(ActionType =~ "AnonymousLinkCreated"),
+            ExternalInvitations = countif(ActionType =~ "SharingInvitationCreated"),
+            Items = dcount(ObjectName),
+            LastSeen = max(TimeGenerated)
+            by Account = AccountDisplayName
+| top 50 by Shares desc
+'''

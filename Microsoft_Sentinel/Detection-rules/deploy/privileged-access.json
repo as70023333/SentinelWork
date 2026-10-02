@@ -1,0 +1,316 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspace": {
+      "type": "String",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace that Microsoft Sentinel is enabled on."
+      }
+    }
+  },
+  "resources": [
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/d79a8170-29af-56ee-820b-9e4157319bd0')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/d79a8170-29af-56ee-820b-9e4157319bd0')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Account added to a privileged Entra ID role",
+        "description": "A user, group or service principal was given one of the directory roles that can take over the tenant, either directly or as a permanent or eligible assignment through Privileged Identity Management (PIM). A user activating a role they already hold in PIM is not reported.\n\nFalse positives: Planned changes by the identity team: a new administrator, a break-glass account, an access review outcome.\n\nResponse: Confirm the change against a ticket with the person named in Actor. If nobody can account for it, remove the assignment, then treat the Actor account as compromised.\n\nMITRE ATT&CK sub-techniques: T1098.003.\n\nSource: SentinelWork rule PA-001.",
+        "severity": "High",
+        "enabled": false,
+        "query": "let PrivilegedRoles = dynamic([\n    \"Global Administrator\", \"Privileged Role Administrator\", \"Privileged Authentication Administrator\",\n    \"Security Administrator\", \"Application Administrator\", \"Cloud Application Administrator\",\n    \"Conditional Access Administrator\", \"Authentication Administrator\", \"Authentication Policy Administrator\",\n    \"Hybrid Identity Administrator\", \"Domain Name Administrator\", \"External Identity Provider Administrator\",\n    \"Exchange Administrator\", \"SharePoint Administrator\", \"Intune Administrator\", \"User Administrator\",\n    \"Helpdesk Administrator\", \"Password Administrator\", \"Partner Tier2 Support\"]);\nlet AllowedActors = dynamic([]);\nlet Direct = AuditLogs\n    | where TimeGenerated > ago(1h)\n    | where LoggedByService =~ \"Core Directory\" and Category =~ \"RoleManagement\" and Result =~ \"success\"\n    | where OperationName in~ (\"Add member to role\", \"Add eligible member to role\", \"Add scoped member to role\")\n\n    | where tostring(InitiatedBy.app.displayName) != \"MS-PIM\"\n    | mv-apply Property = TargetResources[0].modifiedProperties on (\n        where tostring(Property.displayName) == \"Role.DisplayName\"\n        | project RoleName = trim(@'\"', tostring(Property.newValue)))\n    | extend Target = TargetResources[0], AssignmentType = \"Direct\";\nlet ThroughPim = AuditLogs\n    | where TimeGenerated > ago(1h)\n    | where LoggedByService =~ \"PIM\" and Category =~ \"RoleManagement\" and Result =~ \"success\"\n    | where OperationName in~ (\n        \"Add member to role in PIM completed (permanent)\", \"Add member to role in PIM completed (timebound)\",\n        \"Add eligible member to role in PIM completed (permanent)\",\n        \"Add eligible member to role in PIM completed (timebound)\")\n\n    | extend RoleName = tostring(TargetResources[0].displayName), Target = TargetResources[2], AssignmentType = \"PIM\";\nunion Direct, ThroughPim\n| where RoleName in~ (PrivilegedRoles)\n| extend TargetAccount = coalesce(tostring(Target.userPrincipalName), tostring(Target.displayName)),\n         TargetId = tostring(Target.id),\n         TargetType = tostring(Target.type),\n         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\n         ActorIP = tostring(InitiatedBy.user.ipAddress)\n| where tolower(Actor) !in (AllowedActors)\n| project TimeGenerated, RoleName, TargetAccount, TargetId, TargetType, AssignmentType, Operation = OperationName,\n          Actor, ActorIP, CorrelationId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Persistence",
+          "PrivilegeEscalation"
+        ],
+        "techniques": [
+          "T1098"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "TargetAccount"
+              },
+              {
+                "identifier": "AadUserId",
+                "columnName": "TargetId"
+              }
+            ]
+          },
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Actor"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ActorIP"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "RoleName": "RoleName",
+          "AssignmentType": "AssignmentType",
+          "Operation": "Operation",
+          "TargetType": "TargetType"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/754eda29-7cbb-5047-8952-0284f53fbe9e')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/754eda29-7cbb-5047-8952-0284f53fbe9e')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "New secret or certificate added to an application or service principal",
+        "description": "A client secret or certificate was added to an app registration or service principal. Whoever holds the new credential can sign in as that application with its permissions, without a user or MFA, and keeps that access after the user account that added it is cleaned up.\n\nFalse positives: Developers and pipelines rotating secrets before they expire; onboarding a new integration.\n\nResponse: Ask the application owner whether the credential was expected. If not, remove it, review the service principal's sign-ins since it was added, and investigate the Actor account.\n\nMITRE ATT&CK sub-techniques: T1098.001.\n\nSource: SentinelWork rule PA-002.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let AllowedActors = dynamic([]);\nAuditLogs\n| where TimeGenerated > ago(1h)\n| where LoggedByService =~ \"Core Directory\" and Category =~ \"ApplicationManagement\" and Result =~ \"success\"\n| where OperationName has \"Certificates and secrets management\" or OperationName has \"Add service principal credentials\"\n| mv-apply Property = TargetResources[0].modifiedProperties on (\n    where tostring(Property.displayName) == \"KeyDescription\"\n    | project NewKeys = tostring(Property.newValue), OldKeys = tostring(Property.oldValue))\n\n| where coalesce(array_length(parse_json(NewKeys)), 0) > coalesce(array_length(parse_json(OldKeys)), 0)\n| extend ApplicationName = tostring(TargetResources[0].displayName),\n         ApplicationObjectId = tostring(TargetResources[0].id),\n         CredentialType = case(NewKeys has \"KeyType=Password\", \"Client secret\",\n                               NewKeys has \"KeyType=AsymmetricX509Cert\", \"Certificate\",\n                               \"Other\"),\n         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\n         ActorIP = tostring(InitiatedBy.user.ipAddress)\n| where tolower(Actor) !in (AllowedActors)\n| project TimeGenerated, ApplicationName, ApplicationObjectId, CredentialType, Operation = OperationName, Actor,\n          ActorIP, NewKeys, CorrelationId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Persistence",
+          "PrivilegeEscalation"
+        ],
+        "techniques": [
+          "T1098"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Actor"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ActorIP"
+              }
+            ]
+          },
+          {
+            "entityType": "CloudApplication",
+            "fieldMappings": [
+              {
+                "identifier": "Name",
+                "columnName": "ApplicationName"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "CredentialType": "CredentialType",
+          "Operation": "Operation",
+          "ApplicationObjectId": "ApplicationObjectId"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/875efad4-73cd-520e-a094-b258ef6d1c47')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/875efad4-73cd-520e-a094-b258ef6d1c47')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "High-privilege permission granted to an application",
+        "description": "An application was granted a permission that lets it read or send mail, read every file, or change the directory, through user or admin consent, an application permission, or a delegated grant. Consent phishing ends with exactly this event, and an attacker who controls an administrator uses it to give their own application lasting access.\n\nFalse positives: An administrator approving a real application, such as a backup, e-discovery or migration tool.\n\nResponse: Confirm with the Actor that the application is wanted. If not, remove the grant and the enterprise application, then review what the application read while it had access.\n\nSource: SentinelWork rule PA-003.",
+        "severity": "High",
+        "enabled": false,
+        "query": "let HighRiskPermissions = dynamic([\n    \"Mail.Read\", \"Mail.ReadWrite\", \"Mail.Send\", \"Mail.ReadBasic.All\", \"MailboxSettings.ReadWrite\",\n    \"full_access_as_app\", \"EWS.AccessAsUser.All\", \"Files.Read.All\", \"Files.ReadWrite.All\", \"Sites.Read.All\",\n    \"Sites.ReadWrite.All\", \"Sites.FullControl.All\", \"Directory.ReadWrite.All\", \"User.ReadWrite.All\",\n    \"Group.ReadWrite.All\", \"Application.ReadWrite.All\", \"AppRoleAssignment.ReadWrite.All\",\n    \"RoleManagement.ReadWrite.Directory\", \"Policy.ReadWrite.ConditionalAccess\"]);\nAuditLogs\n| where TimeGenerated > ago(1h)\n| where LoggedByService =~ \"Core Directory\" and Result =~ \"success\"\n| where OperationName in~ (\"Consent to application\", \"Add app role assignment to service principal\",\n                           \"Add delegated permission grant\")\n| extend Changes = tostring(TargetResources[0].modifiedProperties)\n| where Changes has_any (HighRiskPermissions)\n| mv-apply Property = TargetResources[0].modifiedProperties on (\n    summarize Values = make_bag(bag_pack(tostring(Property.displayName), trim(@'\"', tostring(Property.newValue)))))\n| extend Permissions = strcat_delim(\" \", tostring(Values[\"ConsentAction.Permissions\"]), tostring(Values[\"AppRole.Value\"]),\n                                    tostring(Values[\"DelegatedPermissionGrant.Scope\"])),\n         AdminConsent = tostring(Values[\"ConsentContext.IsAdminConsent\"]),\n\n         ApplicationName = coalesce(tostring(Values[\"ServicePrincipal.DisplayName\"]),\n                                    tostring(TargetResources[0].displayName)),\n         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\n         ActorIP = tostring(InitiatedBy.user.ipAddress)\n| project TimeGenerated, ApplicationName, Permissions = trim(\" \", Permissions), AdminConsent,\n          Operation = OperationName, Actor, ActorIP, CorrelationId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Persistence",
+          "PrivilegeEscalation",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1098",
+          "T1528"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Actor"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ActorIP"
+              }
+            ]
+          },
+          {
+            "entityType": "CloudApplication",
+            "fieldMappings": [
+              {
+                "identifier": "Name",
+                "columnName": "ApplicationName"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Permissions": "Permissions",
+          "Operation": "Operation",
+          "AdminConsent": "AdminConsent"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/c78ef28a-5a81-522e-ab02-0a890478049a')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/c78ef28a-5a81-522e-ab02-0a890478049a')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Conditional Access policy disabled, changed or deleted",
+        "description": "A Conditional Access policy was updated or deleted. These policies are what enforce MFA, device compliance and location rules, so weakening one is a quiet way to keep access to a compromised account. The alert says whether the policy was deleted, switched off or edited.\n\nFalse positives: The identity team maintaining policies, especially during a rollout, when several edits in a row are normal.\n\nResponse: Compare the old and new policy in the Entra audit log. If the change was not approved, restore the policy and investigate the Actor account's recent sign-ins.\n\nMITRE ATT&CK sub-techniques: T1556.009.\n\nSource: SentinelWork rule PA-004.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let AllowedActors = dynamic([]);\nAuditLogs\n| where TimeGenerated > ago(1h)\n| where Category =~ \"Policy\" and Result =~ \"success\"\n| where OperationName in~ (\"Update conditional access policy\", \"Delete conditional access policy\")\n| extend PolicyName = tostring(TargetResources[0].displayName),\n         PolicyId = tostring(TargetResources[0].id),\n         NewState = tostring(parse_json(tostring(TargetResources[0].modifiedProperties[0].newValue)).state),\n         OldState = tostring(parse_json(tostring(TargetResources[0].modifiedProperties[0].oldValue)).state),\n         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),\n         ActorIP = tostring(InitiatedBy.user.ipAddress)\n| extend Change = case(OperationName =~ \"Delete conditional access policy\", \"Policy deleted\",\n                       OldState =~ \"enabled\" and NewState !~ \"enabled\", \"Policy switched off or set to report-only\",\n                       \"Policy settings edited\")\n| where tolower(Actor) !in (AllowedActors)\n| project TimeGenerated, PolicyName, PolicyId, Change, OldState, NewState, Operation = OperationName, Actor, ActorIP,\n          CorrelationId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "DefenseEvasion",
+          "Persistence"
+        ],
+        "techniques": [
+          "T1556"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Actor"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ActorIP"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "PolicyName": "PolicyName",
+          "Change": "Change",
+          "Operation": "Operation"
+        }
+      }
+    }
+  ]
+}

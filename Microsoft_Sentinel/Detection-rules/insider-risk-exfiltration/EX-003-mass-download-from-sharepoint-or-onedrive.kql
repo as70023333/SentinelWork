@@ -1,0 +1,50 @@
+// Title: Mass download from SharePoint or OneDrive
+// Id: EX-003
+// Severity: Medium
+// Tactics: Collection, Exfiltration
+// Techniques: T1530, T1213, T1567
+// Sub-techniques: T1213.002
+// Tables: CloudAppEvents
+// Frequency: PT1H
+// Period: P14D
+// Entities: Account(FullName=UserUpn, AadUserId=AccountObjectId); IP(Address=IPAddress)
+// Custom details: Files, BaselineMaxPerHour, Sites
+// Description: An account downloaded far more files from SharePoint or OneDrive in one hour than in
+//   any hour of the previous two weeks, and more than a fixed minimum. It is how a departing employee
+//   takes a team site with them and how an attacker with a stolen session collects what the account
+//   can reach.
+// False positives: A new laptop syncing a library for the first time, a migration or backup tool
+//   running as a user, and someone downloading a large project folder for legitimate work.
+// Tuning: Change MinFiles and Multiplier. Exclude the migration or backup account. Combine with HR
+//   leaver data if you have it: the same alert means more for someone in their notice period.
+// Response: Check the address and device against the user's normal ones. A new address suggests a
+//   stolen session (revoke it); a known device suggests the user, which is a conversation for their
+//   manager.
+// References: https://learn.microsoft.com/purview/audit-log-activities
+let MinFiles = 200;
+let Multiplier = 3;
+let Downloads = CloudAppEvents
+    | where TimeGenerated > ago(14d)
+    | where ActionType in~ ("FileDownloaded", "FileSyncDownloadedFull")
+    | where Application has_any ("SharePoint", "OneDrive");
+let Baseline = Downloads
+    | where TimeGenerated < ago(1h)
+    | summarize HourlyFiles = dcount(ObjectName) by AccountObjectId, bin(TimeGenerated, 1h)
+    | summarize BaselineMaxPerHour = max(HourlyFiles) by AccountObjectId;
+Downloads
+| where TimeGenerated > ago(1h)
+| summarize Files = dcount(ObjectName),
+            Sites = strcat_array(make_set(tostring(RawEventData.SiteUrl), 10), ", "),
+            FileSample = make_set(ObjectName, 15),
+            IPAddress = take_any(IPAddress),
+            Countries = make_set(CountryCode, 5),
+            UserUpn = take_any(tostring(RawEventData.UserId)),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated)
+            by AccountObjectId, AccountDisplayName
+| where Files >= MinFiles
+| join kind=leftouter Baseline on AccountObjectId
+| extend BaselineMaxPerHour = coalesce(BaselineMaxPerHour, 0)
+| where Files > Multiplier * BaselineMaxPerHour
+| project FirstSeen, LastSeen, UserUpn, AccountDisplayName, AccountObjectId, IPAddress, Countries, Files,
+          BaselineMaxPerHour, Sites, FileSample

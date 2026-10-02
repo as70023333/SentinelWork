@@ -1,0 +1,331 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspace": {
+      "type": "String",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace that Microsoft Sentinel is enabled on."
+      }
+    }
+  },
+  "resources": [
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/fe084df5-e336-5cc2-aa3c-14b2ca5392fa')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/fe084df5-e336-5cc2-aa3c-14b2ca5392fa')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "User clicked through to a malicious URL",
+        "description": "Safe Links recorded a click on a URL it classes as phishing or malware, and the user reached the page: the click was allowed, or the user chose to continue past the warning. The alert adds the message the link arrived in when it was received in the last seven days.\n\nFalse positives: A URL that was clean when clicked and classified later still means the user saw the page. Security staff opening a reported link from a production mailbox.\n\nResponse: Assume the user entered credentials: revoke sessions, reset the password, check sign-ins from new addresses after the click, and search for other recipients of the same message.\n\nMITRE ATT&CK sub-techniques: T1566.002.\n\nSource: SentinelWork rule EM-001.",
+        "severity": "High",
+        "enabled": false,
+        "query": "let Messages = EmailEvents\n    | where TimeGenerated > ago(7d)\n    | summarize arg_max(TimeGenerated, SenderFromAddress, Subject, DeliveryAction) by NetworkMessageId\n    | project NetworkMessageId, SenderFromAddress, Subject, DeliveryAction;\nUrlClickEvents\n| where TimeGenerated > ago(1h)\n| where isnotempty(ThreatTypes)\n| where ActionType == \"ClickAllowed\" or IsClickedThrough == true\n| summarize Clicks = count(),\n            FirstClick = min(TimeGenerated),\n            LastClick = max(TimeGenerated),\n            IPAddress = take_any(IPAddress),\n            Workload = take_any(Workload)\n            by AccountUpn, Url, ThreatTypes, NetworkMessageId\n| join kind=leftouter Messages on NetworkMessageId\n| project FirstClick, LastClick, AccountUpn, Url, ThreatTypes, Clicks, IPAddress, Workload, NetworkMessageId,\n          SenderFromAddress, Subject, DeliveryAction",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "P7D",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess"
+        ],
+        "techniques": [
+          "T1566"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "AccountUpn"
+              }
+            ]
+          },
+          {
+            "entityType": "URL",
+            "fieldMappings": [
+              {
+                "identifier": "Url",
+                "columnName": "Url"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "IPAddress"
+              }
+            ]
+          },
+          {
+            "entityType": "MailMessage",
+            "fieldMappings": [
+              {
+                "identifier": "NetworkMessageId",
+                "columnName": "NetworkMessageId"
+              },
+              {
+                "identifier": "Sender",
+                "columnName": "SenderFromAddress"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "ThreatTypes": "ThreatTypes",
+          "Clicks": "Clicks",
+          "Subject": "Subject",
+          "Workload": "Workload"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/3283f45d-5e7c-5c14-b082-92d089b69086')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/3283f45d-5e7c-5c14-b082-92d089b69086')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Phishing or malware email delivered to several recipients",
+        "description": "Inbound mail that Defender for Office 365 identified as phishing or malware was still delivered to mailboxes, and one sender reached several recipients within the hour. Delivery despite a verdict usually means an allow rule, a safe sender entry or a policy override let it in.\n\nFalse positives: A phishing simulation, or a trusted partner whose mail trips a detection and is allowed on purpose.\n\nResponse: Remove the messages from all mailboxes, check EM-001 for clicks, and find the override that allowed delivery (the OrgLevelPolicy and UserLevelPolicy columns in EmailEvents name it).\n\nMITRE ATT&CK sub-techniques: T1566.001, T1566.002.\n\nSource: SentinelWork rule EM-002.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let MinRecipients = 3;\nlet AllowedSenderDomains = dynamic([]);\nEmailEvents\n| where TimeGenerated > ago(1h)\n| where EmailDirection == \"Inbound\" and DeliveryAction == \"Delivered\"\n| where ThreatTypes has_any (\"Phish\", \"Malware\")\n| where SenderFromDomain !in~ (AllowedSenderDomains)\n| summarize Recipients = dcount(RecipientEmailAddress),\n            Messages = count(),\n            RecipientSample = make_set(RecipientEmailAddress, 25),\n            Subjects = make_set(Subject, 5),\n            DeliveryLocations = make_set(DeliveryLocation, 5),\n            FirstSeen = min(TimeGenerated),\n            LastSeen = max(TimeGenerated),\n            SenderIPv4 = take_any(SenderIPv4),\n            NetworkMessageId = take_any(NetworkMessageId)\n            by SenderFromAddress, SenderDomain = SenderFromDomain, ThreatTypes\n| where Recipients >= MinRecipients\n| project FirstSeen, LastSeen, SenderFromAddress, SenderDomain, SenderIPv4, ThreatTypes, Recipients, Messages,\n          Subjects, DeliveryLocations, RecipientSample, NetworkMessageId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess"
+        ],
+        "techniques": [
+          "T1566"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "MailMessage",
+            "fieldMappings": [
+              {
+                "identifier": "NetworkMessageId",
+                "columnName": "NetworkMessageId"
+              },
+              {
+                "identifier": "Sender",
+                "columnName": "SenderFromAddress"
+              },
+              {
+                "identifier": "SenderIP",
+                "columnName": "SenderIPv4"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Recipients": "Recipients",
+          "Messages": "Messages",
+          "ThreatTypes": "ThreatTypes",
+          "SenderDomain": "SenderDomain"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/4c2d3dd2-de54-5677-a14d-6577a2016a7c')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/4c2d3dd2-de54-5677-a14d-6577a2016a7c')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Inbox rule that forwards, deletes or hides mail",
+        "description": "A mailbox rule was created or changed so that it forwards or redirects mail to another address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or Conversation History. After taking over a mailbox, an attacker sets a rule like this to read the victim's mail and to hide the replies to the fraudulent messages they send.\n\nFalse positives: Users who forward to a personal or shared mailbox, and rules that file newsletters into Archive or delete notifications.\n\nResponse: Open the rule (RuleName) in the mailbox. If the user did not create it, remove it, revoke sessions, reset the password and review sign-ins from the address that created the rule.\n\nMITRE ATT&CK sub-techniques: T1114.003, T1564.008.\n\nSource: SentinelWork rule EM-003.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let HidingFolders = dynamic([\"RSS\", \"Conversation History\", \"Archive\", \"Junk\", \"Deleted Items\", \"Notes\"]);\nCloudAppEvents\n| where TimeGenerated > ago(1h)\n| where ActionType in~ (\"New-InboxRule\", \"Set-InboxRule\")\n| mv-apply Parameter = RawEventData.Parameters on (\n    summarize Settings = make_bag(bag_pack(tostring(Parameter.Name), tostring(Parameter.Value))))\n| extend RuleName = tostring(Settings.Name),\n         ForwardTo = coalesce(tostring(Settings.ForwardTo), tostring(Settings.ForwardAsAttachmentTo),\n                              tostring(Settings.RedirectTo)),\n         MoveToFolder = tostring(Settings.MoveToFolder),\n         DeletesMail = tostring(Settings.DeleteMessage) =~ \"True\",\n         UserUpn = tostring(RawEventData.UserId)\n| extend Reason = case(isnotempty(ForwardTo), \"Forwards or redirects mail\",\n                       DeletesMail, \"Deletes matching mail\",\n                       MoveToFolder has_any (HidingFolders), \"Moves mail to a folder that is rarely read\",\n                       \"\")\n| where isnotempty(Reason)\n| project TimeGenerated, UserUpn, AccountObjectId, AccountDisplayName, IPAddress, CountryCode, Operation = ActionType,\n          RuleName, Reason, ForwardTo, MoveToFolder, UserAgent",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Collection",
+          "DefenseEvasion"
+        ],
+        "techniques": [
+          "T1114",
+          "T1564"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "UserUpn"
+              },
+              {
+                "identifier": "AadUserId",
+                "columnName": "AccountObjectId"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "IPAddress"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "RuleName": "RuleName",
+          "Reason": "Reason",
+          "ForwardTo": "ForwardTo",
+          "MoveToFolder": "MoveToFolder"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/1e3eb5d7-e2e7-5fdf-b100-b5dbab56e901')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/1e3eb5d7-e2e7-5fdf-b100-b5dbab56e901')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Recipient clicked a link in mail that was later removed as malicious",
+        "description": "Zero-hour auto purge removed a delivered message as phishing or malware in the last hour, and a recipient had already clicked a link in that message. The mail was treated as safe when the user clicked, so Safe Links did not stop them; this rule finds the people exposed in the gap between delivery and removal.\n\nFalse positives: Few. A message removed by mistake and later released is the main one.\n\nResponse: Handle each account as phished: revoke sessions, reset the password, review sign-ins and mailbox rules created after FirstClick.\n\nMITRE ATT&CK sub-techniques: T1566.002.\n\nSource: SentinelWork rule EM-004.",
+        "severity": "High",
+        "enabled": false,
+        "query": "let Removed = EmailPostDeliveryEvents\n    | where TimeGenerated > ago(1h)\n    | where ActionType in~ (\"Phish ZAP\", \"Malware ZAP\")\n    | summarize RemovedAt = min(TimeGenerated),\n                RemovalType = take_any(ActionType),\n                SenderFromAddress = take_any(SenderFromAddress)\n                by NetworkMessageId;\nUrlClickEvents\n| where TimeGenerated > ago(7d)\n| where ActionType == \"ClickAllowed\" or IsClickedThrough == true\n| join kind=inner Removed on NetworkMessageId\n| where TimeGenerated <= RemovedAt\n| summarize Clicks = count(),\n            FirstClick = min(TimeGenerated),\n            Url = take_any(Url),\n            IPAddress = take_any(IPAddress)\n            by AccountUpn, NetworkMessageId, RemovalType, RemovedAt, SenderFromAddress\n| project FirstClick, RemovedAt, AccountUpn, Url, IPAddress, Clicks, RemovalType, SenderFromAddress, NetworkMessageId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "P7D",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess"
+        ],
+        "techniques": [
+          "T1566"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "AccountUpn"
+              }
+            ]
+          },
+          {
+            "entityType": "URL",
+            "fieldMappings": [
+              {
+                "identifier": "Url",
+                "columnName": "Url"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "IPAddress"
+              }
+            ]
+          },
+          {
+            "entityType": "MailMessage",
+            "fieldMappings": [
+              {
+                "identifier": "NetworkMessageId",
+                "columnName": "NetworkMessageId"
+              },
+              {
+                "identifier": "Sender",
+                "columnName": "SenderFromAddress"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "RemovalType": "RemovalType",
+          "Clicks": "Clicks",
+          "FirstClick": "FirstClick",
+          "RemovedAt": "RemovedAt"
+        }
+      }
+    }
+  ]
+}

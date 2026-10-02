@@ -1,0 +1,46 @@
+// Title: High-privilege permission granted to an application
+// Id: PA-003
+// Severity: High
+// Tactics: Persistence, PrivilegeEscalation, CredentialAccess
+// Techniques: T1098, T1528
+// Tables: AuditLogs
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Account(FullName=Actor); IP(Address=ActorIP); CloudApplication(Name=ApplicationName)
+// Custom details: Permissions, Operation, AdminConsent
+// Description: An application was granted a permission that lets it read or send mail, read every
+//   file, or change the directory, through user or admin consent, an application permission, or a
+//   delegated grant. Consent phishing ends with exactly this event, and an attacker who controls an
+//   administrator uses it to give their own application lasting access.
+// False positives: An administrator approving a real application, such as a backup, e-discovery or
+//   migration tool.
+// Tuning: Edit HighRiskPermissions to the permissions you care about. Restrict user consent to
+//   verified publishers so that only administrators can cause this alert.
+// Response: Confirm with the Actor that the application is wanted. If not, remove the grant and the
+//   enterprise application, then review what the application read while it had access.
+// References: https://learn.microsoft.com/defender-xdr/detect-and-remediate-illicit-consent-grants
+let HighRiskPermissions = dynamic([
+    "Mail.Read", "Mail.ReadWrite", "Mail.Send", "Mail.ReadBasic.All", "MailboxSettings.ReadWrite",
+    "full_access_as_app", "EWS.AccessAsUser.All", "Files.Read.All", "Files.ReadWrite.All", "Sites.Read.All",
+    "Sites.ReadWrite.All", "Sites.FullControl.All", "Directory.ReadWrite.All", "User.ReadWrite.All",
+    "Group.ReadWrite.All", "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All",
+    "RoleManagement.ReadWrite.Directory", "Policy.ReadWrite.ConditionalAccess"]);
+AuditLogs
+| where TimeGenerated > ago(1h)
+| where LoggedByService =~ "Core Directory" and Result =~ "success"
+| where OperationName in~ ("Consent to application", "Add app role assignment to service principal",
+                           "Add delegated permission grant")
+| extend Changes = tostring(TargetResources[0].modifiedProperties)
+| where Changes has_any (HighRiskPermissions)
+| mv-apply Property = TargetResources[0].modifiedProperties on (
+    summarize Values = make_bag(bag_pack(tostring(Property.displayName), trim(@'"', tostring(Property.newValue)))))
+| extend Permissions = strcat_delim(" ", tostring(Values["ConsentAction.Permissions"]), tostring(Values["AppRole.Value"]),
+                                    tostring(Values["DelegatedPermissionGrant.Scope"])),
+         AdminConsent = tostring(Values["ConsentContext.IsAdminConsent"]),
+         // For a consent the application is the target; for the other two it is named in the properties.
+         ApplicationName = coalesce(tostring(Values["ServicePrincipal.DisplayName"]),
+                                    tostring(TargetResources[0].displayName)),
+         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+         ActorIP = tostring(InitiatedBy.user.ipAddress)
+| project TimeGenerated, ApplicationName, Permissions = trim(" ", Permissions), AdminConsent,
+          Operation = OperationName, Actor, ActorIP, CorrelationId

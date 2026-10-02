@@ -1,0 +1,38 @@
+// Title: Conditional Access policy disabled, changed or deleted
+// Id: PA-004
+// Severity: Medium
+// Tactics: DefenseEvasion, Persistence
+// Techniques: T1556
+// Sub-techniques: T1556.009
+// Tables: AuditLogs
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Account(FullName=Actor); IP(Address=ActorIP)
+// Custom details: PolicyName, Change, Operation
+// Description: A Conditional Access policy was updated or deleted. These policies are what enforce
+//   MFA, device compliance and location rules, so weakening one is a quiet way to keep access to a
+//   compromised account. The alert says whether the policy was deleted, switched off or edited.
+// False positives: The identity team maintaining policies, especially during a rollout, when several
+//   edits in a row are normal.
+// Tuning: Add the accounts allowed to change policies to AllowedActors and keep alerting on everyone
+//   else. Raise the severity to High if nobody should change policy outside a change window.
+// Response: Compare the old and new policy in the Entra audit log. If the change was not approved,
+//   restore the policy and investigate the Actor account's recent sign-ins.
+// References: https://learn.microsoft.com/entra/identity/conditional-access/overview
+let AllowedActors = dynamic([]);
+AuditLogs
+| where TimeGenerated > ago(1h)
+| where Category =~ "Policy" and Result =~ "success"
+| where OperationName in~ ("Update conditional access policy", "Delete conditional access policy")
+| extend PolicyName = tostring(TargetResources[0].displayName),
+         PolicyId = tostring(TargetResources[0].id),
+         NewState = tostring(parse_json(tostring(TargetResources[0].modifiedProperties[0].newValue)).state),
+         OldState = tostring(parse_json(tostring(TargetResources[0].modifiedProperties[0].oldValue)).state),
+         Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
+         ActorIP = tostring(InitiatedBy.user.ipAddress)
+| extend Change = case(OperationName =~ "Delete conditional access policy", "Policy deleted",
+                       OldState =~ "enabled" and NewState !~ "enabled", "Policy switched off or set to report-only",
+                       "Policy settings edited")
+| where tolower(Actor) !in (AllowedActors)
+| project TimeGenerated, PolicyName, PolicyId, Change, OldState, NewState, Operation = OperationName, Actor, ActorIP,
+          CorrelationId

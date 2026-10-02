@@ -1,0 +1,35 @@
+// Title: Shadow copies or recovery options deleted
+// Id: EP-002
+// Severity: High
+// Tactics: Impact
+// Techniques: T1490
+// Tables: DeviceProcessEvents
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine)
+// Custom details: Method, FileName, InitiatingProcess
+// Description: A command deleted Volume Shadow Copies, shrank their storage, deleted Windows Backup
+//   catalogs or turned off Windows recovery. Ransomware does this immediately before it encrypts, so
+//   that the files cannot be restored locally.
+// False positives: Backup products and disk clean-up scripts that manage shadow copies; an
+//   administrator freeing disk space on a server.
+// Tuning: Exclude the service account or parent process of your backup product. Do not exclude
+//   whole servers.
+// Response: Treat as ransomware in progress until shown otherwise: isolate the device, check
+//   neighbouring devices for the same command, and confirm the offline backups are intact.
+// References: https://attack.mitre.org/techniques/T1490/
+DeviceProcessEvents
+| where TimeGenerated > ago(1h)
+| where FileName in~ ("vssadmin.exe", "wmic.exe", "wbadmin.exe", "bcdedit.exe", "powershell.exe", "pwsh.exe")
+| extend Method = case(
+    FileName =~ "vssadmin.exe" and ProcessCommandLine has "delete" and ProcessCommandLine has "shadows", "vssadmin delete shadows",
+    FileName =~ "vssadmin.exe" and ProcessCommandLine has "resize" and ProcessCommandLine has "shadowstorage", "vssadmin resize shadowstorage",
+    FileName =~ "wmic.exe" and ProcessCommandLine has "shadowcopy" and ProcessCommandLine has "delete", "wmic shadowcopy delete",
+    FileName =~ "wbadmin.exe" and ProcessCommandLine has "delete" and ProcessCommandLine has_any ("catalog", "systemstatebackup", "backup"), "wbadmin delete backup",
+    FileName =~ "bcdedit.exe" and ProcessCommandLine has "recoveryenabled" and ProcessCommandLine has "no", "bcdedit recovery disabled",
+    FileName =~ "bcdedit.exe" and ProcessCommandLine has "bootstatuspolicy" and ProcessCommandLine has "ignoreallfailures", "bcdedit boot failures ignored",
+    FileName in~ ("powershell.exe", "pwsh.exe") and ProcessCommandLine has "Win32_ShadowCopy" and ProcessCommandLine has_any ("Delete", "Remove-WmiObject", "Remove-CimInstance"), "PowerShell shadow copy delete",
+    "")
+| where isnotempty(Method)
+| project TimeGenerated, DeviceName, DeviceId, AccountName, AccountDomain, Method, FileName, ProcessCommandLine,
+          InitiatingProcess = InitiatingProcessFileName, InitiatingProcessCommandLine, ReportId

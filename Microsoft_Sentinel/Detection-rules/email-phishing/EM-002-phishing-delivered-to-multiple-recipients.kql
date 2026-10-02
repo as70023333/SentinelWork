@@ -1,0 +1,41 @@
+// Title: Phishing or malware email delivered to several recipients
+// Id: EM-002
+// Severity: Medium
+// Tactics: InitialAccess
+// Techniques: T1566
+// Sub-techniques: T1566.001, T1566.002
+// Tables: EmailEvents
+// Frequency: PT1H
+// Period: PT1H
+// Entities: MailMessage(NetworkMessageId=NetworkMessageId, Sender=SenderFromAddress, SenderIP=SenderIPv4)
+// Custom details: Recipients, Messages, ThreatTypes, SenderDomain
+// Description: Inbound mail that Defender for Office 365 identified as phishing or malware was still
+//   delivered to mailboxes, and one sender reached several recipients within the hour. Delivery
+//   despite a verdict usually means an allow rule, a safe sender entry or a policy override let it in.
+// False positives: A phishing simulation, or a trusted partner whose mail trips a detection and is
+//   allowed on purpose.
+// Tuning: Lower MinRecipients to 1 for a small organisation. Add your simulation vendor's sending
+//   domain to AllowedSenderDomains.
+// Response: Remove the messages from all mailboxes, check EM-001 for clicks, and find the override
+//   that allowed delivery (the OrgLevelPolicy and UserLevelPolicy columns in EmailEvents name it).
+// References: https://learn.microsoft.com/defender-office-365/step-by-step-guides/how-to-handle-false-negatives-in-microsoft-defender-for-office-365
+let MinRecipients = 3;
+let AllowedSenderDomains = dynamic([]);
+EmailEvents
+| where TimeGenerated > ago(1h)
+| where EmailDirection == "Inbound" and DeliveryAction == "Delivered"
+| where ThreatTypes has_any ("Phish", "Malware")
+| where SenderFromDomain !in~ (AllowedSenderDomains)
+| summarize Recipients = dcount(RecipientEmailAddress),
+            Messages = count(),
+            RecipientSample = make_set(RecipientEmailAddress, 25),
+            Subjects = make_set(Subject, 5),
+            DeliveryLocations = make_set(DeliveryLocation, 5),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated),
+            SenderIPv4 = take_any(SenderIPv4),
+            NetworkMessageId = take_any(NetworkMessageId)
+            by SenderFromAddress, SenderDomain = SenderFromDomain, ThreatTypes
+| where Recipients >= MinRecipients
+| project FirstSeen, LastSeen, SenderFromAddress, SenderDomain, SenderIPv4, ThreatTypes, Recipients, Messages,
+          Subjects, DeliveryLocations, RecipientSample, NetworkMessageId

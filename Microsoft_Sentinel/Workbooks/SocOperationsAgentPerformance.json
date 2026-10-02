@@ -1,0 +1,1196 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# SOC Operations and Agent Performance\n\nThe incident queue as a whole. **Overview** answers \"are we keeping up\": how many incidents, how\nfast they are acknowledged and closed, and how they were classified. **Rules** shows which rules\ncost the most time for the least result. **Agent** shows what the Autonomous SOC Analyst did, read\nfrom the labels it writes on each incident (`soc-agent`, `soc-agent:<disposition>`,\n`soc-agent:class:<alert class>`). **Health** shows whether the tables are still receiving data and\nwhether any rule is failing.\n\nTimes: *acknowledge* is creation to first change of the incident; *close* is creation to closure.\nThe rule failure table needs Sentinel health monitoring switched on (Settings, Auditing and health\nmonitoring); without it the table is empty.\n\n**Tables read:** `SecurityIncident`, `SecurityAlert`, `Usage` and, when present, `SentinelHealth`. A tile or chart for a table you do not collect shows an error; the rest still works."
+      },
+      "name": "introduction"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "3b103a0b-d35e-50ee-9b55-0e30f449498a",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 2592000000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "54265ddc-ff13-521a-9d5e-a4794838c285",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "Overview",
+            "style": "link"
+          },
+          {
+            "id": "2b99863a-f3e6-5811-8aec-c4fa9f2f8169",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Rules",
+            "subTarget": "Rules",
+            "style": "link"
+          },
+          {
+            "id": "e8790dba-6682-5f24-81bf-55ca07102554",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Agent",
+            "subTarget": "Agent",
+            "style": "link"
+          },
+          {
+            "id": "08c7f264-57e0-5801-bdc1-64860a4f2514",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Health",
+            "subTarget": "Health",
+            "style": "link"
+          },
+          {
+            "id": "d03edaa1-53c8-5f69-a383-8d302c9f6a60",
+            "cellValue": "Tab",
+            "linkTarget": "parameter",
+            "linkLabel": "Detections",
+            "subTarget": "Detections",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Created = count(),\r\n            Open = countif(Status != \"Closed\"),\r\n            OpenHigh = countif(Status != \"Closed\" and Severity == \"High\"),\r\n            Closed = countif(Status == \"Closed\"),\r\n            MinutesToAcknowledge = avgif(datetime_diff(\"minute\", FirstModifiedTime, CreatedTime), isnotnull(FirstModifiedTime)),\r\n            MinutesToClose = avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            NotThreats = countif(Classification in (\"FalsePositive\", \"BenignPositive\"))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Incidents\", \"Value\", Created),\r\n    bag_pack(\"Metric\", \"Open\", \"Value\", Open),\r\n    bag_pack(\"Metric\", \"Open, high severity\", \"Value\", OpenHigh),\r\n    bag_pack(\"Metric\", \"Closed\", \"Value\", Closed),\r\n    bag_pack(\"Metric\", \"Mean minutes to acknowledge\", \"Value\", round(MinutesToAcknowledge, 1)),\r\n    bag_pack(\"Metric\", \"Mean hours to close\", \"Value\", round(MinutesToClose / 60.0, 1)),\r\n    bag_pack(\"Metric\", \"True positive % of closed\", \"Value\", iff(Closed > 0, round(100.0 * TruePositives / Closed, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"False or benign positive % of closed\", \"Value\", iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), 0.0)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
+              "size": 4,
+              "title": "Incidents in the time range",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Severity",
+              "size": 0,
+              "title": "Incidents created over time, by severity",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "High",
+                    "color": "redBright"
+                  },
+                  {
+                    "seriesName": "Medium",
+                    "color": "orange"
+                  },
+                  {
+                    "seriesName": "Low",
+                    "color": "yellow"
+                  },
+                  {
+                    "seriesName": "Informational",
+                    "color": "gray"
+                  }
+                ]
+              }
+            },
+            "customWidth": "60",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Status == \"Closed\"\r\n| summarize Incidents = count() by Classification = iff(isempty(Classification), \"Undetermined\", Classification)",
+              "size": 0,
+              "title": "How closed incidents were classified",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "piechart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "TruePositive",
+                    "color": "redBright"
+                  },
+                  {
+                    "seriesName": "BenignPositive",
+                    "color": "blue"
+                  },
+                  {
+                    "seriesName": "FalsePositive",
+                    "color": "gray"
+                  },
+                  {
+                    "seriesName": "Undetermined",
+                    "color": "yellow"
+                  }
+                ]
+              }
+            },
+            "customWidth": "40",
+            "name": "overview-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Incidents = count(),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            MeanMinutesToAcknowledge = round(avgif(datetime_diff(\"minute\", FirstModifiedTime, CreatedTime), isnotnull(FirstModifiedTime)), 1),\r\n            MeanHoursToClose = round(avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)) / 60.0, 1)\r\n            by Severity\r\n| extend Position = case(Severity == \"High\", 1, Severity == \"Medium\", 2, Severity == \"Low\", 3, 4)\r\n| order by Position asc\r\n| project Severity, Incidents, StillOpen, MeanMinutesToAcknowledge, MeanHoursToClose",
+              "size": 0,
+              "title": "Response times by severity",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "MeanMinutesToAcknowledge",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  },
+                  {
+                    "columnMatch": "MeanHoursToClose",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "40",
+            "name": "overview-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Status != \"Closed\"\r\n| extend Position = case(Severity == \"High\", 1, Severity == \"Medium\", 2, Severity == \"Low\", 3, 4),\r\n         LabelText = tostring(Labels)\r\n| order by Position asc, CreatedTime asc\r\n| project IncidentNumber, Title, Severity, Status,\r\n          AgeHours = datetime_diff(\"hour\", now(), CreatedTime),\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          Agent = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText),\r\n          IncidentUrl\r\n| take 250",
+              "size": 0,
+              "title": "Open incidents, oldest first within each severity",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "AgeHours",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "60",
+            "name": "overview-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Overview"
+      },
+      "name": "tab-overview"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Incidents = count(),\r\n            Closed = countif(Status == \"Closed\"),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            NotThreats = countif(Classification in (\"FalsePositive\", \"BenignPositive\")),\r\n            MeanHoursToClose = round(avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)) / 60.0, 1),\r\n            Provider = take_any(ProviderName)\r\n            by Rule = Title\r\n| extend NotThreatPercent = iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), real(null))\r\n| project Rule, Incidents, Closed, TruePositives, NotThreats, NotThreatPercent, MeanHoursToClose, Provider\r\n| top 50 by Incidents desc",
+              "size": 0,
+              "title": "Incidents by rule: volume against result",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Incidents",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  },
+                  {
+                    "columnMatch": "NotThreatPercent",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "rules-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityAlert\r\n| summarize arg_max(TimeGenerated, ProductName, AlertSeverity) by SystemAlertId\r\n| summarize Alerts = count() by Product = ProductName, AlertSeverity",
+              "size": 0,
+              "title": "Alerts by product and severity",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "High",
+                    "color": "redBright"
+                  },
+                  {
+                    "seriesName": "Medium",
+                    "color": "orange"
+                  },
+                  {
+                    "seriesName": "Low",
+                    "color": "yellow"
+                  },
+                  {
+                    "seriesName": "Informational",
+                    "color": "gray"
+                  }
+                ]
+              }
+            },
+            "customWidth": "50",
+            "name": "rules-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend AssignedTo = tostring(Owner.assignedTo)\r\n| where isnotempty(AssignedTo)\r\n| summarize Closed = countif(Status == \"Closed\"),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            MeanHoursToClose = round(avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)) / 60.0, 1)\r\n            by AssignedTo\r\n| top 50 by Closed desc",
+              "size": 0,
+              "title": "Work closed by each owner",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Closed",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "rules-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Rules"
+      },
+      "name": "tab-rules"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "The Autonomous SOC Analyst labels every incident it processes. **page** means it escalated to a\nperson immediately, **queue** means it left the incident for working hours, **auto_close** means it\nclosed the incident itself, and **pending** means it is waiting for evidence. An incident with no\n`soc-agent` label was never seen by the agent."
+            },
+            "customWidth": "100",
+            "name": "agent-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend LabelText = tostring(Labels)\r\n| extend Handled = LabelText has \"soc-agent\",\r\n         Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText)\r\n| summarize Incidents = count(),\r\n            HandledByAgent = countif(Handled),\r\n            AutoClosed = countif(Disposition == \"auto_close\"),\r\n            Paged = countif(Disposition == \"page\"),\r\n            Queued = countif(Disposition == \"queue\"),\r\n            Pending = countif(Disposition == \"pending\"),\r\n            MinutesToVerdict = avgif(datetime_diff(\"second\", FirstModifiedTime, CreatedTime) / 60.0, Handled and isnotnull(FirstModifiedTime))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Incidents the agent processed\", \"Value\", HandledByAgent),\r\n    bag_pack(\"Metric\", \"% of all incidents\", \"Value\", iff(Incidents > 0, round(100.0 * HandledByAgent / Incidents, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"Closed by the agent\", \"Value\", AutoClosed),\r\n    bag_pack(\"Metric\", \"Escalated to a person at once\", \"Value\", Paged),\r\n    bag_pack(\"Metric\", \"Left in the queue\", \"Value\", Queued),\r\n    bag_pack(\"Metric\", \"Waiting for evidence\", \"Value\", Pending),\r\n    bag_pack(\"Metric\", \"Mean minutes from creation to first agent update\", \"Value\", round(MinutesToVerdict, 2)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
+              "size": 4,
+              "title": "What the agent did",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "agent-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, tostring(Labels))\r\n| where isnotempty(Disposition)\r\n| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Disposition",
+              "size": 0,
+              "title": "Agent decisions over time",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart",
+              "chartSettings": {
+                "seriesLabelSettings": [
+                  {
+                    "seriesName": "page",
+                    "color": "redBright"
+                  },
+                  {
+                    "seriesName": "queue",
+                    "color": "blue"
+                  },
+                  {
+                    "seriesName": "auto_close",
+                    "color": "green"
+                  },
+                  {
+                    "seriesName": "pending",
+                    "color": "yellow"
+                  }
+                ]
+              }
+            },
+            "customWidth": "60",
+            "name": "agent-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend LabelText = tostring(Labels)\r\n| extend AlertClass = extract(@\"soc-agent:class:([A-Za-z0-9_\\-]+)\", 1, LabelText),\r\n         Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText)\r\n| where isnotempty(AlertClass)\r\n| summarize Incidents = count(),\r\n            AutoClosed = countif(Disposition == \"auto_close\"),\r\n            Paged = countif(Disposition == \"page\"),\r\n            Queued = countif(Disposition == \"queue\")\r\n            by AlertClass\r\n| order by Incidents desc",
+              "size": 0,
+              "title": "Alert classes the agent saw",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Incidents",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "40",
+            "name": "agent-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where tostring(Labels) has \"soc-agent:auto_close\"\r\n| project ClosedTime, IncidentNumber, Title, Severity, Status, Classification, Reason = ClassificationReason,\r\n          Comment = ClassificationComment, IncidentUrl\r\n| order by ClosedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents the agent closed",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "60",
+            "name": "agent-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where tostring(Labels) has \"soc-agent:auto_close\" and Status != \"Closed\"\r\n| project LastModifiedTime, IncidentNumber, Title, Severity, Status, ModifiedBy, AssignedTo = tostring(Owner.assignedTo),\r\n          IncidentUrl\r\n| order by LastModifiedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Closed by the agent and open again: decisions a person reversed",
+              "noDataMessage": "No incident the agent closed has been reopened.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "agent-6",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Agent"
+      },
+      "name": "tab-agent"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Usage\r\n| summarize LastRecord = max(TimeGenerated), MB = round(sum(Quantity), 1), Billable = take_any(IsBillable) by Table = DataType\r\n| extend HoursSinceLastRecord = datetime_diff(\"hour\", now(), LastRecord)\r\n| project Table, LastRecord, HoursSinceLastRecord, MB, Billable\r\n| order by HoursSinceLastRecord desc, MB desc",
+              "size": 0,
+              "title": "When each table last received data",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "HoursSinceLastRecord",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "orange"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "health-1",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Largest = Usage\r\n    | summarize MB = sum(Quantity) by DataType\r\n    | top 8 by MB desc\r\n    | project DataType;\r\nUsage\r\n| where DataType in (Largest)\r\n| summarize GB = round(sum(Quantity) / 1024.0, 2) by bin(TimeGenerated, {TimeRange:grain}), DataType",
+              "size": 0,
+              "title": "Ingestion over time, eight largest tables (GB)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "50",
+            "name": "health-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union isfuzzy=true\r\n    (datatable(TimeGenerated:datetime, SentinelResourceName:string, SentinelResourceType:string, Status:string,\r\n               Reason:string, Description:string) []),\r\n    (SentinelHealth)\r\n| where SentinelResourceType =~ \"Analytics Rule\" and Status in~ (\"Failure\", \"Warning\")\r\n| summarize Failures = countif(Status =~ \"Failure\"),\r\n            Warnings = countif(Status =~ \"Warning\"),\r\n            LastSeen = max(TimeGenerated),\r\n            Reason = take_any(Reason),\r\n            Details = take_any(Description)\r\n            by Rule = SentinelResourceName\r\n| order by Failures desc, Warnings desc",
+              "size": 0,
+              "title": "Analytics rules that failed or ran with a warning",
+              "noDataMessage": "No rule failures recorded. If health monitoring is not switched on, nothing is recorded.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Failures",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "redBright"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "health-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Health"
+      },
+      "name": "tab-health"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+            },
+            "customWidth": "100",
+            "name": "detections-1"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"SO-001\", \"Log source stopped sending data\", \"Medium\", \"DefenseEvasion\",\r\n    \"SO-002\", \"Analytics rule is failing to run\", \"Medium\", \"DefenseEvasion\",\r\n    \"SO-003\", \"High severity incident not picked up within 30 minutes\", \"Medium\", \"Operational\",\r\n    \"SO-004\", \"One rule is creating an excessive number of incidents\", \"Low\", \"Operational\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "size": 0,
+              "title": "Rule coverage",
+              "noDataMessage": "No rules are defined for this area.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "Alerts",
+                    "formatter": 4,
+                    "formatOptions": {
+                      "min": 0,
+                      "palette": "blue"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "100",
+            "name": "detections-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Log source stopped sending data\", \"Analytics rule is failing to run\", \"High severity incident not picked up within 30 minutes\", \"One rule is creating an excessive number of incidents\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "size": 0,
+              "title": "Alerts over time, by rule",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "barchart"
+            },
+            "customWidth": "100",
+            "name": "detections-3",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Log source stopped sending data\", \"Analytics rule is failing to run\", \"High severity incident not picked up within 30 minutes\", \"One rule is creating an excessive number of incidents\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "size": 0,
+              "title": "Latest alerts",
+              "noDataMessage": "None of these rules raised an alert in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-4",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let RuleNames = dynamic([\"Log source stopped sending data\", \"Analytics rule is failing to run\", \"High severity incident not picked up within 30 minutes\", \"One rule is creating an excessive number of incidents\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "size": 0,
+              "title": "Incidents created by these rules",
+              "noDataMessage": "No incidents from these rules in the time range.",
+              "timeContext": {
+                "durationMs": 0
+              },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Severity",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "colors",
+                      "thresholdsGrid": [
+                        {
+                          "operator": "==",
+                          "thresholdValue": "High",
+                          "representation": "redBright",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Medium",
+                          "representation": "orange",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Low",
+                          "representation": "yellow",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "==",
+                          "thresholdValue": "Informational",
+                          "representation": "gray",
+                          "text": "{0}{1}"
+                        },
+                        {
+                          "operator": "Default",
+                          "thresholdValue": null,
+                          "representation": "blue",
+                          "text": "{0}{1}"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "columnMatch": "IncidentUrl",
+                    "formatter": 7,
+                    "formatOptions": {
+                      "linkTarget": "Url",
+                      "linkLabel": "Open incident"
+                    }
+                  }
+                ],
+                "filter": true,
+                "rowLimit": 250
+              }
+            },
+            "customWidth": "50",
+            "name": "detections-5",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "Tab",
+        "comparison": "isEqualTo",
+        "value": "Detections"
+      },
+      "name": "tab-detections"
+    }
+  ],
+  "fromTemplateId": "sentinel-UserWorkbook",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

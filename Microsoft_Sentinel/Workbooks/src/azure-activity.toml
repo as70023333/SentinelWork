@@ -1,0 +1,199 @@
+name = "Azure Control Plane Activity"
+file = "AzureControlPlaneActivity"
+area = "azure-activity"
+summary = "Who changed what in Azure: sensitive operations, role assignments, deletions, and callers that are being refused"
+tables = ["AzureActivity"]
+default_range = "7d"
+intro = """
+The Azure activity log: every create, change, delete and action against Azure resources, with the
+identity and address that asked for it. **Overview** shows the volume and who is active.
+**Sensitive operations** lists the handful of operations that change who has access or what is
+logged. **Failures** shows callers that are being refused, which is what exploring with a stolen
+credential looks like.
+
+Counts use the final record of each operation (status Success or Failure), so an operation is
+counted once.
+"""
+
+[[tab]]
+name = "Overview"
+
+[[tab.item]]
+kind = "tiles"
+title = "Activity in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+AzureActivity
+| summarize Succeeded = countif(ActivityStatusValue =~ "Success"),
+            Failed = countif(ActivityStatusValue =~ "Failure"),
+            Callers = dcount(Caller),
+            Deletes = countif(ActivityStatusValue =~ "Success" and OperationNameValue endswith "/DELETE"),
+            RoleChanges = countif(ActivityStatusValue =~ "Success"
+                                  and OperationNameValue startswith "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/"),
+            Subscriptions = dcount(SubscriptionId)
+| project Tiles = pack_array(
+    bag_pack("Metric", "Operations succeeded", "Value", Succeeded),
+    bag_pack("Metric", "Operations failed", "Value", Failed),
+    bag_pack("Metric", "Callers", "Value", Callers),
+    bag_pack("Metric", "Deletions", "Value", Deletes),
+    bag_pack("Metric", "Role assignment changes", "Value", RoleChanges),
+    bag_pack("Metric", "Subscriptions", "Value", Subscriptions))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Successful operations over time, by kind"
+width = 60
+colours = { Write = "blue", Delete = "redBright", Action = "orange", Other = "gray" }
+query = '''
+AzureActivity
+| where ActivityStatusValue =~ "Success"
+| extend Kind = case(OperationNameValue endswith "/WRITE", "Write",
+                     OperationNameValue endswith "/DELETE", "Delete",
+                     OperationNameValue endswith "/ACTION", "Action",
+                     "Other")
+| summarize Operations = count() by bin(TimeGenerated, {TimeRange:grain}), Kind
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Operations by resource provider (top 12)"
+width = 40
+query = '''
+AzureActivity
+| where ActivityStatusValue =~ "Success" and isnotempty(ResourceProviderValue)
+| summarize Operations = count() by Provider = toupper(ResourceProviderValue)
+| top 12 by Operations desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Callers"
+bars = ["Writes"]
+heat = ["Deletes", "Failures"]
+query = '''
+AzureActivity
+| where ActivityStatusValue in~ ("Success", "Failure")
+| summarize Writes = countif(ActivityStatusValue =~ "Success" and OperationNameValue endswith "/WRITE"),
+            Deletes = countif(ActivityStatusValue =~ "Success" and OperationNameValue endswith "/DELETE"),
+            Actions = countif(ActivityStatusValue =~ "Success" and OperationNameValue endswith "/ACTION"),
+            Failures = countif(ActivityStatusValue =~ "Failure"),
+            Addresses = dcount(CallerIpAddress),
+            Subscriptions = dcount(SubscriptionId),
+            LastSeen = max(TimeGenerated)
+            by Caller
+| top 50 by Writes + Deletes + Actions desc
+'''
+
+[[tab]]
+name = "Sensitive operations"
+
+[[tab.item]]
+kind = "table"
+title = "Operations that change access, logging or network exposure"
+query = '''
+let Sensitive = datatable(Operation:string, Meaning:string) [
+    "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE", "Role assigned",
+    "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE", "Role assignment removed",
+    "MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/WRITE", "Custom role created or changed",
+    "MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION", "Global Administrator elevated to User Access Administrator",
+    "MICROSOFT.AUTHORIZATION/LOCKS/DELETE", "Resource lock removed",
+    "MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE", "Policy assignment removed",
+    "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE", "Diagnostic setting deleted",
+    "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE", "Diagnostic setting changed",
+    "MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DELETE", "Log Analytics workspace deleted",
+    "MICROSOFT.SECURITYINSIGHTS/ALERTRULES/DELETE", "Sentinel analytics rule deleted",
+    "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE", "Network security group rule changed",
+    "MICROSOFT.NETWORK/PUBLICIPADDRESSES/WRITE", "Public IP address created or changed",
+    "MICROSOFT.KEYVAULT/VAULTS/ACCESSPOLICIES/WRITE", "Key vault access policy changed",
+    "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION", "Storage account keys listed",
+    "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION", "Run Command on a virtual machine",
+    "MICROSOFT.COMPUTE/VIRTUALMACHINES/EXTENSIONS/WRITE", "Virtual machine extension installed",
+    "MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION", "Disk export (SAS) started",
+    "MICROSOFT.COMPUTE/SNAPSHOTS/WRITE", "Disk snapshot created"
+];
+AzureActivity
+| where ActivityStatusValue =~ "Success"
+| extend Operation = toupper(OperationNameValue)
+| join kind=inner Sensitive on Operation
+| project TimeGenerated, Meaning, Caller, Address = CallerIpAddress, Resource = _ResourceId, ResourceGroup, SubscriptionId
+| order by TimeGenerated desc
+| take 500
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Sensitive operations by caller"
+width = 50
+query = '''
+AzureActivity
+| where ActivityStatusValue =~ "Success"
+| where OperationNameValue startswith "MICROSOFT.AUTHORIZATION/"
+    or OperationNameValue startswith "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/"
+    or OperationNameValue has "RUNCOMMAND"
+    or OperationNameValue has "LISTKEYS"
+| where OperationNameValue !endswith "/READ"
+| summarize Operations = count() by Caller
+| top 15 by Operations desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Deletions by caller and resource group"
+width = 50
+bars = ["Deleted"]
+palette = "redBright"
+query = '''
+AzureActivity
+| where ActivityStatusValue =~ "Success" and OperationNameValue endswith "/DELETE"
+| where OperationNameValue !startswith "MICROSOFT.RESOURCES/DEPLOYMENTS"
+| summarize Deleted = dcount(_ResourceId),
+            Types = strcat_array(make_set(OperationNameValue, 6), ", "),
+            LastSeen = max(TimeGenerated)
+            by Caller, ResourceGroup
+| top 50 by Deleted desc
+'''
+
+[[tab]]
+name = "Failures"
+
+[[tab.item]]
+kind = "table"
+title = "Callers being refused"
+width = 50
+bars = ["Refused"]
+palette = "orange"
+query = '''
+AzureActivity
+| where ActivityStatusValue =~ "Failure"
+| summarize Failures = count(),
+            Refused = countif(ActivitySubstatusValue in~ ("Forbidden", "Unauthorized")),
+            Operations = dcount(OperationNameValue),
+            Examples = strcat_array(make_set(OperationNameValue, 5), ", "),
+            LastSeen = max(TimeGenerated)
+            by Caller, Address = CallerIpAddress
+| top 50 by Refused desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Addresses each caller used"
+width = 50
+bars = ["Operations"]
+query = '''
+AzureActivity
+| where ActivityStatusValue in~ ("Success", "Failure") and isnotempty(CallerIpAddress)
+| summarize Operations = count(), FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated)
+            by Caller, Address = CallerIpAddress
+| join kind=inner (
+    AzureActivity
+    | where isnotempty(CallerIpAddress)
+    | summarize AddressCount = dcount(CallerIpAddress) by Caller
+    | where AddressCount > 1) on Caller
+| project Caller, Address, Operations, FirstSeen, LastSeen, AddressCount
+| order by AddressCount desc, Caller asc, Operations desc
+| take 250
+'''

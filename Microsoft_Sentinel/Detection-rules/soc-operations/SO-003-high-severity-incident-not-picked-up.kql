@@ -1,0 +1,30 @@
+// Title: High severity incident not picked up within 30 minutes
+// Id: SO-003
+// Severity: Medium
+// Tables: SecurityIncident
+// Frequency: PT30M
+// Period: PT2H
+// Entities: URL(Url=IncidentUrl)
+// Custom details: IncidentNumber, IncidentTitle, MinutesOpen, Provider
+// Description: A high severity incident is still in status New, has no owner and has not been
+//   touched by the Autonomous SOC Analyst (no soc-agent label) half an hour after it was created.
+//   It is the safety net for the night shift: if both the agent and the on-call analyst miss an
+//   incident, this says so while it still matters.
+// False positives: None in the usual sense. If it fires often, the queue is under-staffed or the
+//   agent is not running.
+// Tuning: The window is 30 to 60 minutes after creation so each incident is reported once; change
+//   both numbers and the Frequency together.
+// Response: Assign the incident now. Then find out why it was missed: check that the agent's
+//   automation rule and playbook ran, and who was on call.
+// References: https://learn.microsoft.com/azure/sentinel/incident-investigation
+SecurityIncident
+| where TimeGenerated > ago(2h)
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where Severity == "High" and Status == "New"
+| where CreatedTime between (ago(60m) .. ago(30m))
+| where isempty(tostring(Owner.assignedTo)) and isempty(tostring(Owner.userPrincipalName))
+| where tostring(Labels) !has "soc-agent"
+// This rule's own incidents are Medium, so it cannot report itself; the title check makes that explicit.
+| where Title != "High severity incident not picked up within 30 minutes"
+| project CreatedTime, IncidentNumber, IncidentTitle = Title, Severity, Status,
+          MinutesOpen = datetime_diff("minute", now(), CreatedTime), Provider = ProviderName, IncidentUrl

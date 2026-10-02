@@ -1,0 +1,37 @@
+// Title: Run Command executed on a virtual machine
+// Id: AZ-004
+// Severity: Medium
+// Tactics: Execution
+// Techniques: T1059
+// Tables: AzureActivity
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Account(FullName=Caller); IP(Address=CallerIpAddress); AzureResource(ResourceId=ResourceId)
+// Custom details: Invocations, Operation, ResourceGroup
+// Description: Someone used the Azure Run Command feature to execute a script inside a virtual
+//   machine or Arc-enabled server. The script runs as SYSTEM or root and needs no network path or
+//   credentials for the machine, only an Azure role, which makes it a favourite way to move from a
+//   compromised cloud identity onto servers (MITRE ATT&CK T1651, Cloud Administration Command).
+// False positives: Operations teams and automation that use Run Command for maintenance.
+// Tuning: Add the automation identities to AllowedCallers. If nobody should use the feature, deny
+//   the runCommand action with a custom role or Azure Policy and raise the severity to High.
+// Response: Ask the caller what was run. The activity log does not contain the script; collect it
+//   from the machine (the Run Command extension folder) and from endpoint telemetry at that time.
+// References: https://learn.microsoft.com/azure/virtual-machines/run-command-overview
+let AllowedCallers = dynamic([]);
+AzureActivity
+| where TimeGenerated > ago(1h)
+| where OperationNameValue in~ ("MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION",
+                                "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMANDS/WRITE",
+                                "MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMAND/ACTION",
+                                "MICROSOFT.HYBRIDCOMPUTE/MACHINES/RUNCOMMANDS/WRITE")
+| where ActivityStatusValue in~ ("Start", "Accept", "Success")
+| where tolower(Caller) !in (AllowedCallers)
+| summarize Invocations = dcount(CorrelationId),
+            Statuses = make_set(ActivityStatusValue, 5),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated)
+            by Caller, CallerIpAddress, ResourceId = _ResourceId, ResourceGroup, SubscriptionId,
+               Operation = OperationNameValue
+| project FirstSeen, LastSeen, Caller, CallerIpAddress, ResourceId, ResourceGroup, SubscriptionId, Operation,
+          Invocations, Statuses

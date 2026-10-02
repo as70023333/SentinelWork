@@ -1,0 +1,41 @@
+// Title: Inbox rule that forwards, deletes or hides mail
+// Id: EM-003
+// Severity: Medium
+// Tactics: Collection, DefenseEvasion
+// Techniques: T1114, T1564
+// Sub-techniques: T1114.003, T1564.008
+// Tables: CloudAppEvents
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Account(FullName=UserUpn, AadUserId=AccountObjectId); IP(Address=IPAddress)
+// Custom details: RuleName, Reason, ForwardTo, MoveToFolder
+// Description: A mailbox rule was created or changed so that it forwards or redirects mail to another
+//   address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or
+//   Conversation History. After taking over a mailbox, an attacker sets a rule like this to read the
+//   victim's mail and to hide the replies to the fraudulent messages they send.
+// False positives: Users who forward to a personal or shared mailbox, and rules that file newsletters
+//   into Archive or delete notifications.
+// Tuning: Block automatic external forwarding in the outbound spam policy. Remove "Archive" from
+//   HidingFolders if it is too noisy in your organisation.
+// Response: Open the rule (RuleName) in the mailbox. If the user did not create it, remove it, revoke
+//   sessions, reset the password and review sign-ins from the address that created the rule.
+// References: https://learn.microsoft.com/defender-xdr/alert-grading-playbook-inbox-manipulation-rules
+let HidingFolders = dynamic(["RSS", "Conversation History", "Archive", "Junk", "Deleted Items", "Notes"]);
+CloudAppEvents
+| where TimeGenerated > ago(1h)
+| where ActionType in~ ("New-InboxRule", "Set-InboxRule")
+| mv-apply Parameter = RawEventData.Parameters on (
+    summarize Settings = make_bag(bag_pack(tostring(Parameter.Name), tostring(Parameter.Value))))
+| extend RuleName = tostring(Settings.Name),
+         ForwardTo = coalesce(tostring(Settings.ForwardTo), tostring(Settings.ForwardAsAttachmentTo),
+                              tostring(Settings.RedirectTo)),
+         MoveToFolder = tostring(Settings.MoveToFolder),
+         DeletesMail = tostring(Settings.DeleteMessage) =~ "True",
+         UserUpn = tostring(RawEventData.UserId)
+| extend Reason = case(isnotempty(ForwardTo), "Forwards or redirects mail",
+                       DeletesMail, "Deletes matching mail",
+                       MoveToFolder has_any (HidingFolders), "Moves mail to a folder that is rarely read",
+                       "")
+| where isnotempty(Reason)
+| project TimeGenerated, UserUpn, AccountObjectId, AccountDisplayName, IPAddress, CountryCode, Operation = ActionType,
+          RuleName, Reason, ForwardTo, MoveToFolder, UserAgent

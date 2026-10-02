@@ -1,0 +1,40 @@
+// Title: Cloud copy or file transfer tool executed
+// Id: EX-004
+// Severity: Medium
+// Tactics: Exfiltration
+// Techniques: T1567, T1048
+// Sub-techniques: T1567.002
+// Tables: DeviceProcessEvents
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine); FileHash(Algorithm=HashAlgorithm, Value=SHA256)
+// Custom details: Tool, Reason, Executions
+// Description: A tool built to copy data to cloud storage or to another host ran on a device: Rclone,
+//   the MEGA clients, WinSCP, PSCP or similar. Ransomware crews use exactly these to take data before
+//   encrypting, and Rclone is often renamed, so the rule also recognises it by its original file
+//   name and by its command line options.
+// False positives: Administrators and developers who use WinSCP, PSCP or Rclone for their work, and
+//   backup jobs built on Rclone.
+// Tuning: Remove tools that are approved software in your organisation from TransferTools, or
+//   exclude the device groups where they belong (for example jump hosts).
+// Response: Read the command line for the destination. If it is personal or unknown storage, isolate
+//   the device and work out what was copied from the file events around the same time.
+// References: https://attack.mitre.org/techniques/T1567/002/
+let TransferTools = dynamic(["rclone.exe", "megasync.exe", "megacmd.exe", "megaclient.exe", "megacmdserver.exe",
+                             "winscp.exe", "winscp.com", "pscp.exe", "psftp.exe", "filezilla.exe", "restic.exe",
+                             "azcopy.exe", "gsutil.exe"]);
+DeviceProcessEvents
+| where TimeGenerated > ago(1h)
+| extend Reason = case(
+    tolower(FileName) in (TransferTools), "Known transfer tool by file name",
+    tolower(ProcessVersionInfoOriginalFileName) in (TransferTools), "Known transfer tool running under another name",
+    ProcessCommandLine has "--config" and ProcessCommandLine has_any ("copy", "sync", "move") and ProcessCommandLine has_any ("--transfers", "--no-check-certificate", "--multi-thread-streams"), "Rclone style command line",
+    "")
+| where isnotempty(Reason)
+| extend Tool = iff(isnotempty(ProcessVersionInfoOriginalFileName), ProcessVersionInfoOriginalFileName, FileName)
+| summarize Executions = count(),
+            arg_min(TimeGenerated, AccountName, AccountDomain, FolderPath, SHA256, InitiatingProcessFileName, ReportId)
+            by DeviceName, DeviceId, Tool, Reason, FileName, ProcessCommandLine
+| project TimeGenerated, DeviceName, DeviceId, AccountName, AccountDomain, Tool, Reason, FileName, FolderPath,
+          ProcessCommandLine, Executions, SHA256, HashAlgorithm = "SHA256",
+          InitiatingProcess = InitiatingProcessFileName, ReportId

@@ -1,0 +1,330 @@
+name = "SOC Operations and Agent Performance"
+file = "SocOperationsAgentPerformance"
+area = "soc-operations"
+summary = "How the queue is doing: response times, classifications, noisy rules, what the Autonomous SOC Analyst handled, and whether the data and rules behind it all are healthy"
+tables = ["SecurityIncident", "SecurityAlert", "Usage"]
+optional_tables = ["SentinelHealth"]
+default_range = "30d"
+intro = """
+The incident queue as a whole. **Overview** answers "are we keeping up": how many incidents, how
+fast they are acknowledged and closed, and how they were classified. **Rules** shows which rules
+cost the most time for the least result. **Agent** shows what the Autonomous SOC Analyst did, read
+from the labels it writes on each incident (`soc-agent`, `soc-agent:<disposition>`,
+`soc-agent:class:<alert class>`). **Health** shows whether the tables are still receiving data and
+whether any rule is failing.
+
+Times: *acknowledge* is creation to first change of the incident; *close* is creation to closure.
+The rule failure table needs Sentinel health monitoring switched on (Settings, Auditing and health
+monitoring); without it the table is empty.
+"""
+
+[[tab]]
+name = "Overview"
+
+[[tab.item]]
+kind = "tiles"
+title = "Incidents in the time range"
+label = "Metric"
+value = "Value"
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| summarize Created = count(),
+            Open = countif(Status != "Closed"),
+            OpenHigh = countif(Status != "Closed" and Severity == "High"),
+            Closed = countif(Status == "Closed"),
+            MinutesToAcknowledge = avgif(datetime_diff("minute", FirstModifiedTime, CreatedTime), isnotnull(FirstModifiedTime)),
+            MinutesToClose = avgif(datetime_diff("minute", ClosedTime, CreatedTime), Status == "Closed" and isnotnull(ClosedTime)),
+            TruePositives = countif(Classification == "TruePositive"),
+            NotThreats = countif(Classification in ("FalsePositive", "BenignPositive"))
+| project Tiles = pack_array(
+    bag_pack("Metric", "Incidents", "Value", Created),
+    bag_pack("Metric", "Open", "Value", Open),
+    bag_pack("Metric", "Open, high severity", "Value", OpenHigh),
+    bag_pack("Metric", "Closed", "Value", Closed),
+    bag_pack("Metric", "Mean minutes to acknowledge", "Value", round(MinutesToAcknowledge, 1)),
+    bag_pack("Metric", "Mean hours to close", "Value", round(MinutesToClose / 60.0, 1)),
+    bag_pack("Metric", "True positive % of closed", "Value", iff(Closed > 0, round(100.0 * TruePositives / Closed, 1), 0.0)),
+    bag_pack("Metric", "False or benign positive % of closed", "Value", iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), 0.0)))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Incidents created over time, by severity"
+width = 60
+colours = { High = "redBright", Medium = "orange", Low = "yellow", Informational = "gray" }
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Severity
+'''
+
+[[tab.item]]
+kind = "piechart"
+title = "How closed incidents were classified"
+width = 40
+colours = { TruePositive = "redBright", BenignPositive = "blue", FalsePositive = "gray", Undetermined = "yellow" }
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where Status == "Closed"
+| summarize Incidents = count() by Classification = iff(isempty(Classification), "Undetermined", Classification)
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Response times by severity"
+width = 40
+heat = ["MeanMinutesToAcknowledge", "MeanHoursToClose"]
+palette = "orange"
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| summarize Incidents = count(),
+            StillOpen = countif(Status != "Closed"),
+            MeanMinutesToAcknowledge = round(avgif(datetime_diff("minute", FirstModifiedTime, CreatedTime), isnotnull(FirstModifiedTime)), 1),
+            MeanHoursToClose = round(avgif(datetime_diff("minute", ClosedTime, CreatedTime), Status == "Closed" and isnotnull(ClosedTime)) / 60.0, 1)
+            by Severity
+| extend Position = case(Severity == "High", 1, Severity == "Medium", 2, Severity == "Low", 3, 4)
+| order by Position asc
+| project Severity, Incidents, StillOpen, MeanMinutesToAcknowledge, MeanHoursToClose
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Open incidents, oldest first within each severity"
+width = 60
+severity = "Severity"
+link = "IncidentUrl"
+link_label = "Open incident"
+heat = ["AgeHours"]
+palette = "orange"
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where Status != "Closed"
+| extend Position = case(Severity == "High", 1, Severity == "Medium", 2, Severity == "Low", 3, 4),
+         LabelText = tostring(Labels)
+| order by Position asc, CreatedTime asc
+| project IncidentNumber, Title, Severity, Status,
+          AgeHours = datetime_diff("hour", now(), CreatedTime),
+          AssignedTo = tostring(Owner.assignedTo),
+          Agent = extract(@"soc-agent:(page|queue|auto_close|pending)", 1, LabelText),
+          IncidentUrl
+| take 250
+'''
+
+[[tab]]
+name = "Rules"
+
+[[tab.item]]
+kind = "table"
+title = "Incidents by rule: volume against result"
+bars = ["Incidents"]
+heat = ["NotThreatPercent"]
+palette = "orange"
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| summarize Incidents = count(),
+            Closed = countif(Status == "Closed"),
+            TruePositives = countif(Classification == "TruePositive"),
+            NotThreats = countif(Classification in ("FalsePositive", "BenignPositive")),
+            MeanHoursToClose = round(avgif(datetime_diff("minute", ClosedTime, CreatedTime), Status == "Closed" and isnotnull(ClosedTime)) / 60.0, 1),
+            Provider = take_any(ProviderName)
+            by Rule = Title
+| extend NotThreatPercent = iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), real(null))
+| project Rule, Incidents, Closed, TruePositives, NotThreats, NotThreatPercent, MeanHoursToClose, Provider
+| top 50 by Incidents desc
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Alerts by product and severity"
+width = 50
+colours = { High = "redBright", Medium = "orange", Low = "yellow", Informational = "gray" }
+query = '''
+SecurityAlert
+| summarize arg_max(TimeGenerated, ProductName, AlertSeverity) by SystemAlertId
+| summarize Alerts = count() by Product = ProductName, AlertSeverity
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Work closed by each owner"
+width = 50
+bars = ["Closed"]
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| extend AssignedTo = tostring(Owner.assignedTo)
+| where isnotempty(AssignedTo)
+| summarize Closed = countif(Status == "Closed"),
+            StillOpen = countif(Status != "Closed"),
+            MeanHoursToClose = round(avgif(datetime_diff("minute", ClosedTime, CreatedTime), Status == "Closed" and isnotnull(ClosedTime)) / 60.0, 1)
+            by AssignedTo
+| top 50 by Closed desc
+'''
+
+[[tab]]
+name = "Agent"
+
+[[tab.item]]
+kind = "text"
+text = """
+The Autonomous SOC Analyst labels every incident it processes. **page** means it escalated to a
+person immediately, **queue** means it left the incident for working hours, **auto_close** means it
+closed the incident itself, and **pending** means it is waiting for evidence. An incident with no
+`soc-agent` label was never seen by the agent.
+"""
+
+[[tab.item]]
+kind = "tiles"
+title = "What the agent did"
+label = "Metric"
+value = "Value"
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| extend LabelText = tostring(Labels)
+| extend Handled = LabelText has "soc-agent",
+         Disposition = extract(@"soc-agent:(page|queue|auto_close|pending)", 1, LabelText)
+| summarize Incidents = count(),
+            HandledByAgent = countif(Handled),
+            AutoClosed = countif(Disposition == "auto_close"),
+            Paged = countif(Disposition == "page"),
+            Queued = countif(Disposition == "queue"),
+            Pending = countif(Disposition == "pending"),
+            MinutesToVerdict = avgif(datetime_diff("second", FirstModifiedTime, CreatedTime) / 60.0, Handled and isnotnull(FirstModifiedTime))
+| project Tiles = pack_array(
+    bag_pack("Metric", "Incidents the agent processed", "Value", HandledByAgent),
+    bag_pack("Metric", "% of all incidents", "Value", iff(Incidents > 0, round(100.0 * HandledByAgent / Incidents, 1), 0.0)),
+    bag_pack("Metric", "Closed by the agent", "Value", AutoClosed),
+    bag_pack("Metric", "Escalated to a person at once", "Value", Paged),
+    bag_pack("Metric", "Left in the queue", "Value", Queued),
+    bag_pack("Metric", "Waiting for evidence", "Value", Pending),
+    bag_pack("Metric", "Mean minutes from creation to first agent update", "Value", round(MinutesToVerdict, 2)))
+| mv-expand Tile = Tiles
+| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Agent decisions over time"
+width = 60
+colours = { page = "redBright", queue = "blue", auto_close = "green", pending = "yellow" }
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| extend Disposition = extract(@"soc-agent:(page|queue|auto_close|pending)", 1, tostring(Labels))
+| where isnotempty(Disposition)
+| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Disposition
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Alert classes the agent saw"
+width = 40
+bars = ["Incidents"]
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| extend LabelText = tostring(Labels)
+| extend AlertClass = extract(@"soc-agent:class:([A-Za-z0-9_\-]+)", 1, LabelText),
+         Disposition = extract(@"soc-agent:(page|queue|auto_close|pending)", 1, LabelText)
+| where isnotempty(AlertClass)
+| summarize Incidents = count(),
+            AutoClosed = countif(Disposition == "auto_close"),
+            Paged = countif(Disposition == "page"),
+            Queued = countif(Disposition == "queue")
+            by AlertClass
+| order by Incidents desc
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Incidents the agent closed"
+width = 60
+severity = "Severity"
+link = "IncidentUrl"
+link_label = "Open incident"
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where tostring(Labels) has "soc-agent:auto_close"
+| project ClosedTime, IncidentNumber, Title, Severity, Status, Classification, Reason = ClassificationReason,
+          Comment = ClassificationComment, IncidentUrl
+| order by ClosedTime desc
+| take 250
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Closed by the agent and open again: decisions a person reversed"
+severity = "Severity"
+link = "IncidentUrl"
+link_label = "Open incident"
+empty = "No incident the agent closed has been reopened."
+query = '''
+SecurityIncident
+| summarize arg_max(TimeGenerated, *) by IncidentNumber
+| where tostring(Labels) has "soc-agent:auto_close" and Status != "Closed"
+| project LastModifiedTime, IncidentNumber, Title, Severity, Status, ModifiedBy, AssignedTo = tostring(Owner.assignedTo),
+          IncidentUrl
+| order by LastModifiedTime desc
+| take 250
+'''
+
+[[tab]]
+name = "Health"
+
+[[tab.item]]
+kind = "table"
+title = "When each table last received data"
+width = 50
+heat = ["HoursSinceLastRecord"]
+palette = "orange"
+query = '''
+Usage
+| summarize LastRecord = max(TimeGenerated), MB = round(sum(Quantity), 1), Billable = take_any(IsBillable) by Table = DataType
+| extend HoursSinceLastRecord = datetime_diff("hour", now(), LastRecord)
+| project Table, LastRecord, HoursSinceLastRecord, MB, Billable
+| order by HoursSinceLastRecord desc, MB desc
+'''
+
+[[tab.item]]
+kind = "barchart"
+title = "Ingestion over time, eight largest tables (GB)"
+width = 50
+query = '''
+let Largest = Usage
+    | summarize MB = sum(Quantity) by DataType
+    | top 8 by MB desc
+    | project DataType;
+Usage
+| where DataType in (Largest)
+| summarize GB = round(sum(Quantity) / 1024.0, 2) by bin(TimeGenerated, {TimeRange:grain}), DataType
+'''
+
+[[tab.item]]
+kind = "table"
+title = "Analytics rules that failed or ran with a warning"
+bars = ["Failures"]
+palette = "redBright"
+empty = "No rule failures recorded. If health monitoring is not switched on, nothing is recorded."
+query = '''
+union isfuzzy=true
+    (datatable(TimeGenerated:datetime, SentinelResourceName:string, SentinelResourceType:string, Status:string,
+               Reason:string, Description:string) []),
+    (SentinelHealth)
+| where SentinelResourceType =~ "Analytics Rule" and Status in~ ("Failure", "Warning")
+| summarize Failures = countif(Status =~ "Failure"),
+            Warnings = countif(Status =~ "Warning"),
+            LastSeen = max(TimeGenerated),
+            Reason = take_any(Reason),
+            Details = take_any(Description)
+            by Rule = SentinelResourceName
+| order by Failures desc, Warnings desc
+'''

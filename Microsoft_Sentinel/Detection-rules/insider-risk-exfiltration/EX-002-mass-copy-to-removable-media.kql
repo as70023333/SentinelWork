@@ -1,0 +1,52 @@
+// Title: Many files copied to removable media
+// Id: EX-002
+// Severity: Medium
+// Tactics: Exfiltration
+// Techniques: T1052
+// Sub-techniques: T1052.001
+// Tables: DeviceEvents, DeviceFileEvents
+// Frequency: PT1H
+// Period: P1D
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain)
+// Custom details: Files, TotalMB, UsbProduct, UsbSerial, DriveLetter
+// Description: A user created a large number of files on a USB drive within an hour. The rule pairs
+//   the drive letter Defender for Endpoint recorded when the drive was mounted with the files created
+//   on that letter afterwards, so internal drives and network shares are not counted.
+// False positives: IT staff building installation media, photographers and engineers who work from
+//   external drives, and backups to a USB disk.
+// Tuning: Change MinFiles. Add file extensions you do not care about to IgnoredExtensions. If USB
+//   storage is not allowed at all, block it with device control and treat any hit as a policy breach.
+// Response: Review the file names and the user's role. If the data is sensitive, speak to the user's
+//   manager and HR before the user, and keep the serial number of the drive for the record.
+// References: https://learn.microsoft.com/defender-endpoint/device-control-overview
+let MinFiles = 100;
+let IgnoredExtensions = dynamic(["tmp", "lnk", "ini", "db"]);
+let Mounts = DeviceEvents
+    | where TimeGenerated > ago(1d)
+    | where ActionType == "UsbDriveMounted"
+    | extend Usb = parse_json(tostring(AdditionalFields))
+    | extend DriveLetter = toupper(substring(tostring(Usb.DriveLetter), 0, 2))
+    | where isnotempty(DriveLetter)
+    | summarize MountedAt = min(TimeGenerated),
+                UsbProduct = take_any(tostring(Usb.ProductName)),
+                UsbSerial = take_any(tostring(Usb.SerialNumber))
+                by DeviceId, DriveLetter;
+DeviceFileEvents
+| where TimeGenerated > ago(1h)
+| where ActionType == "FileCreated"
+| extend DriveLetter = toupper(substring(FolderPath, 0, 2)),
+         Extension = tolower(extract(@"\.([A-Za-z0-9]{1,8})$", 1, FileName))
+| where Extension !in (IgnoredExtensions)
+| join kind=inner Mounts on DeviceId, DriveLetter
+| where TimeGenerated >= MountedAt
+| summarize Files = dcount(FolderPath),
+            TotalMB = round(sum(FileSize) / 1048576.0, 1),
+            Extensions = make_set(Extension, 15),
+            FileSample = make_set(FileName, 15),
+            FirstCopy = min(TimeGenerated),
+            LastCopy = max(TimeGenerated)
+            by DeviceId, DeviceName, AccountName = InitiatingProcessAccountName,
+               AccountDomain = InitiatingProcessAccountDomain, DriveLetter, UsbProduct, UsbSerial
+| where Files >= MinFiles
+| project FirstCopy, LastCopy, DeviceName, DeviceId, AccountName, AccountDomain, DriveLetter, UsbProduct, UsbSerial,
+          Files, TotalMB, Extensions, FileSample

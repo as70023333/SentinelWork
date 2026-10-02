@@ -1,0 +1,72 @@
+name: Sentinel content
+
+# Checks the detection rules and workbooks under Microsoft_Sentinel/ on every change to them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Microsoft_Sentinel/Detection-rules/**"
+      - "Microsoft_Sentinel/Workbooks/**"
+      - "Microsoft_Sentinel/Content_Build/**"
+      - ".github/workflows/sentinel-content.yml"
+  pull_request:
+    paths:
+      - "Microsoft_Sentinel/Detection-rules/**"
+      - "Microsoft_Sentinel/Workbooks/**"
+      - "Microsoft_Sentinel/Content_Build/**"
+      - ".github/workflows/sentinel-content.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-content-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: Microsoft_Sentinel/Content_Build
+
+jobs:
+  lint-and-test:
+    name: Lint and test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Unit tests
+        run: python -m unittest discover -s tests -t .
+      - name: Sources are valid and generated files are up to date
+        run: python -m sentinel_content check
+
+  kql-semantic-check:
+    name: KQL semantic check (Kusto.Language)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Export every query
+        run: python -m sentinel_content export-queries "$RUNNER_TEMP/queries.json"
+      - name: Build the checker
+        run: |
+          if ! dotnet build kql-check --configuration Release --nologo --verbosity quiet > "$RUNNER_TEMP/build.log" 2>&1; then
+            cat "$RUNNER_TEMP/build.log"
+            message=$(tail -c 6000 "$RUNNER_TEMP/build.log" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\r//g;s/\n/%0A/g')
+            echo "::error title=kql-check did not build::$message"
+            exit 1
+          fi
+      - name: Analyse every query against the table schemas
+        run: dotnet kql-check/bin/Release/net8.0/KqlCheck.dll schema/tables.json "$RUNNER_TEMP/queries.json"

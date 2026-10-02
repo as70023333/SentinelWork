@@ -1,0 +1,38 @@
+// Title: User clicked through to a malicious URL
+// Id: EM-001
+// Severity: High
+// Tactics: InitialAccess
+// Techniques: T1566
+// Sub-techniques: T1566.002
+// Tables: UrlClickEvents, EmailEvents
+// Frequency: PT1H
+// Period: P7D
+// Entities: Account(FullName=AccountUpn); URL(Url=Url); IP(Address=IPAddress); MailMessage(NetworkMessageId=NetworkMessageId, Sender=SenderFromAddress)
+// Custom details: ThreatTypes, Clicks, Subject, Workload
+// Description: Safe Links recorded a click on a URL it classes as phishing or malware, and the user
+//   reached the page: the click was allowed, or the user chose to continue past the warning. The
+//   alert adds the message the link arrived in when it was received in the last seven days.
+// False positives: A URL that was clean when clicked and classified later still means the user saw
+//   the page. Security staff opening a reported link from a production mailbox.
+// Tuning: Turn off "Let users click through to the original URL" in the Safe Links policy to remove
+//   the click-through case entirely.
+// Response: Assume the user entered credentials: revoke sessions, reset the password, check sign-ins
+//   from new addresses after the click, and search for other recipients of the same message.
+// References: https://learn.microsoft.com/defender-office-365/safe-links-about
+let Messages = EmailEvents
+    | where TimeGenerated > ago(7d)
+    | summarize arg_max(TimeGenerated, SenderFromAddress, Subject, DeliveryAction) by NetworkMessageId
+    | project NetworkMessageId, SenderFromAddress, Subject, DeliveryAction;
+UrlClickEvents
+| where TimeGenerated > ago(1h)
+| where isnotempty(ThreatTypes)
+| where ActionType == "ClickAllowed" or IsClickedThrough == true
+| summarize Clicks = count(),
+            FirstClick = min(TimeGenerated),
+            LastClick = max(TimeGenerated),
+            IPAddress = take_any(IPAddress),
+            Workload = take_any(Workload)
+            by AccountUpn, Url, ThreatTypes, NetworkMessageId
+| join kind=leftouter Messages on NetworkMessageId
+| project FirstClick, LastClick, AccountUpn, Url, ThreatTypes, Clicks, IPAddress, Workload, NetworkMessageId,
+          SenderFromAddress, Subject, DeliveryAction

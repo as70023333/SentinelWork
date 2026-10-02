@@ -1,0 +1,42 @@
+// Title: Repeated MFA denials followed by a successful sign-in
+// Id: ID-002
+// Severity: High
+// Tactics: CredentialAccess
+// Techniques: T1621
+// Tables: SigninLogs
+// Frequency: PT1H
+// Period: PT2H
+// Entities: Account(FullName=UserPrincipalName, AadUserId=UserId); IP(Address=IPAddress)
+// Custom details: MfaDenials, FirstDenial, SuccessTime, Application
+// Description: A user's multifactor prompt failed or was denied several times (error 500121) and a
+//   sign-in that required MFA then succeeded. That is the shape of MFA fatigue: an attacker who
+//   already has the password sends prompts until the user approves one.
+// False positives: A user who mistypes a code or ignores prompts on a new phone and then gets it
+//   right. Those cases usually show one address and one device throughout.
+// Tuning: Raise MinDenials if users often fail MFA. Number matching in Microsoft Authenticator
+//   removes most of the real cases this rule exists for.
+// Response: Call the user on a known number. If they did not start the sign-ins, revoke sessions,
+//   reset the password, review MFA methods registered in the last days and check what the session
+//   did after SuccessTime.
+// References: https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-number-match
+let MinDenials = 5;
+let Denials = SigninLogs
+    | where TimeGenerated > ago(2h)
+    | where ResultType == "500121"
+    | summarize MfaDenials = count(),
+                FirstDenial = min(TimeGenerated),
+                LastDenial = max(TimeGenerated),
+                DenialAddresses = make_set(IPAddress, 10),
+                DenialReasons = make_set(ResultDescription, 5)
+                by UserId
+    | where MfaDenials >= MinDenials;
+SigninLogs
+| where TimeGenerated > ago(1h)
+| where ResultType == "0" and AuthenticationRequirement == "multiFactorAuthentication"
+| join kind=inner Denials on UserId
+| where TimeGenerated > FirstDenial
+| summarize arg_min(TimeGenerated, UserPrincipalName, IPAddress, Location, AppDisplayName, MfaDenials, FirstDenial,
+                    LastDenial, DenialAddresses, DenialReasons)
+            by UserId
+| project SuccessTime = TimeGenerated, UserPrincipalName, UserId, IPAddress, Country = Location,
+          Application = AppDisplayName, MfaDenials, FirstDenial, LastDenial, DenialAddresses, DenialReasons

@@ -1,0 +1,305 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspace": {
+      "type": "String",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace that Microsoft Sentinel is enabled on."
+      }
+    }
+  },
+  "resources": [
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/b6ad0dc6-a84c-5f7c-ab97-0544db24b2e9')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/b6ad0dc6-a84c-5f7c-ab97-0544db24b2e9')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Azure diagnostic settings deleted",
+        "description": "A diagnostic setting was deleted from an Azure resource. Diagnostic settings are what send a resource's logs to the workspace, so removing one stops the evidence for that resource (a key vault, a storage account, a firewall) from being collected.\n\nFalse positives: Infrastructure as code that replaces a setting by deleting and recreating it, and resources being decommissioned.\n\nResponse: Recreate the setting, then look at what the same caller did around that time; the deletion is usually preparation for something else.\n\nMITRE ATT&CK sub-techniques: T1562.008.\n\nSource: SentinelWork rule AZ-001.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let AllowedCallers = dynamic([]);\nAzureActivity\n| where TimeGenerated > ago(1h)\n| where OperationNameValue =~ \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE\"\n| where ActivityStatusValue =~ \"Success\"\n| where tolower(Caller) !in (AllowedCallers)\n| summarize Deletions = dcount(_ResourceId),\n            Resources = make_set(_ResourceId, 25),\n            FirstSeen = min(TimeGenerated),\n            LastSeen = max(TimeGenerated)\n            by Caller, CallerIpAddress, SubscriptionId\n| project FirstSeen, LastSeen, Caller, CallerIpAddress, SubscriptionId, Deletions, ResourceId = tostring(Resources[0]),\n          Resources",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "DefenseEvasion"
+        ],
+        "techniques": [
+          "T1562"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Caller"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "CallerIpAddress"
+              }
+            ]
+          },
+          {
+            "entityType": "AzureResource",
+            "fieldMappings": [
+              {
+                "identifier": "ResourceId",
+                "columnName": "ResourceId"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Deletions": "Deletions",
+          "SubscriptionId": "SubscriptionId"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/0bce4b20-af76-5f31-ab81-71acb73e92ee')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/0bce4b20-af76-5f31-ab81-71acb73e92ee')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Owner or other privileged Azure role assigned",
+        "description": "Someone assigned Owner, User Access Administrator, Role Based Access Control Administrator or Contributor on an Azure scope. The first three can grant any other role, so a new assignment is both an escalation and a way back in after the original account is cleaned up.\n\nFalse positives: Planned access changes, new subscriptions, and Privileged Identity Management activating a role (the caller is then the PIM service).\n\nResponse: Look up PrincipalId in Entra ID and confirm the assignment with the caller. If it was not approved, remove it and review everything the caller and the principal did since.\n\nMITRE ATT&CK sub-techniques: T1098.003.\n\nSource: SentinelWork rule AZ-002.",
+        "severity": "High",
+        "enabled": false,
+        "query": "let PrivilegedRoleIds = dynamic({\n    \"8e3af657-a8ff-443c-a75c-2fe8c4bcb635\": \"Owner\",\n    \"18d7d88d-d35e-4fb5-a5c3-7773c20a72d9\": \"User Access Administrator\",\n    \"f58310d9-a9f6-439a-9e8d-f62e7b41a168\": \"Role Based Access Control Administrator\",\n    \"b24988ac-6180-42a0-ab88-20f7382dd24c\": \"Contributor\"});\nlet AllowedCallers = dynamic([]);\nlet Writes = AzureActivity\n    | where TimeGenerated > ago(1h)\n    | where OperationNameValue =~ \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE\";\nlet Succeeded = Writes\n    | where ActivityStatusValue =~ \"Success\"\n    | distinct CorrelationId;\nWrites\n\n| where ActivityStatusValue =~ \"Start\"\n| where CorrelationId in (Succeeded)\n| where tolower(Caller) !in (AllowedCallers)\n| extend Request = coalesce(tostring(Properties_d), Properties)\n| extend RoleDefinitionId = tolower(extract(@\"(?i)roleDefinitions/([0-9a-f\\-]{36})\", 1, Request)),\n         PrincipalId = extract(@\"(?i)principalId\\W+([0-9a-f\\-]{36})\", 1, Request),\n         PrincipalType = extract(@\"(?i)principalType\\W+(\\w+)\", 1, Request)\n| extend RoleName = tostring(PrivilegedRoleIds[RoleDefinitionId])\n| where isnotempty(RoleName)\n| extend Scope = tostring(split(tolower(_ResourceId), \"/providers/microsoft.authorization/roleassignments\")[0])\n| project TimeGenerated, Caller, CallerIpAddress, RoleName, PrincipalId, PrincipalType, Scope, SubscriptionId,\n          ResourceGroup, CorrelationId",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Persistence",
+          "PrivilegeEscalation"
+        ],
+        "techniques": [
+          "T1098"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Caller"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "CallerIpAddress"
+              }
+            ]
+          },
+          {
+            "entityType": "AzureResource",
+            "fieldMappings": [
+              {
+                "identifier": "ResourceId",
+                "columnName": "Scope"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "RoleName": "RoleName",
+          "PrincipalId": "PrincipalId",
+          "PrincipalType": "PrincipalType"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/7ea2fe36-0711-5ede-a437-e54475ef640a')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/7ea2fe36-0711-5ede-a437-e54475ef640a')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Many Azure resources deleted by one caller",
+        "description": "One caller deleted an unusually large number of Azure resources in an hour. A compromised administrator or a leaked service principal secret can destroy an environment this way, and it is also what an expensive mistake in a script looks like while it is still running.\n\nFalse positives: Tearing down a test environment, a pipeline that recreates resources, and clean-up after a project ends.\n\nResponse: Contact the caller at once. If the deletion is not theirs, disable the identity, remove its role assignments and begin recovery (soft delete and backups) while the retention lasts.\n\nSource: SentinelWork rule AZ-003.",
+        "severity": "High",
+        "enabled": false,
+        "query": "let MinResources = 20;\nlet AllowedCallers = dynamic([]);\nAzureActivity\n| where TimeGenerated > ago(1h)\n| where OperationNameValue endswith \"/DELETE\" and ActivityStatusValue =~ \"Success\"\n\n| where OperationNameValue !startswith \"MICROSOFT.RESOURCES/DEPLOYMENTS\"\n    and OperationNameValue !startswith \"MICROSOFT.AUTHORIZATION/\"\n    and OperationNameValue !startswith \"MICROSOFT.RESOURCES/TAGS\"\n| where tolower(Caller) !in (AllowedCallers)\n| summarize DeletedResources = dcount(_ResourceId),\n            ResourceTypes = make_set(OperationNameValue, 15),\n            ResourceGroups = strcat_array(make_set(ResourceGroup, 15), \", \"),\n            ResourceSample = make_set(_ResourceId, 15),\n            FirstSeen = min(TimeGenerated),\n            LastSeen = max(TimeGenerated)\n            by Caller, CallerIpAddress, SubscriptionId\n| where DeletedResources >= MinResources\n| project FirstSeen, LastSeen, Caller, CallerIpAddress, SubscriptionId, DeletedResources, ResourceGroups,\n          ResourceTypes, ResourceSample",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Impact"
+        ],
+        "techniques": [
+          "T1485"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Caller"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "CallerIpAddress"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "DeletedResources": "DeletedResources",
+          "ResourceGroups": "ResourceGroups",
+          "SubscriptionId": "SubscriptionId"
+        }
+      }
+    },
+    {
+      "id": "[concat(resourceId('Microsoft.OperationalInsights/workspaces/providers', parameters('workspace'), 'Microsoft.SecurityInsights'),'/alertRules/90fad50a-216f-5e78-8932-d335079ec4f7')]",
+      "name": "[concat(parameters('workspace'),'/Microsoft.SecurityInsights/90fad50a-216f-5e78-8932-d335079ec4f7')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "kind": "Scheduled",
+      "apiVersion": "2024-03-01",
+      "properties": {
+        "displayName": "Run Command executed on a virtual machine",
+        "description": "Someone used the Azure Run Command feature to execute a script inside a virtual machine or Arc-enabled server. The script runs as SYSTEM or root and needs no network path or credentials for the machine, only an Azure role, which makes it a favourite way to move from a compromised cloud identity onto servers (MITRE ATT&CK T1651, Cloud Administration Command).\n\nFalse positives: Operations teams and automation that use Run Command for maintenance.\n\nResponse: Ask the caller what was run. The activity log does not contain the script; collect it from the machine (the Run Command extension folder) and from endpoint telemetry at that time.\n\nSource: SentinelWork rule AZ-004.",
+        "severity": "Medium",
+        "enabled": false,
+        "query": "let AllowedCallers = dynamic([]);\nAzureActivity\n| where TimeGenerated > ago(1h)\n| where OperationNameValue in~ (\"MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION\",\n                                \"MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMANDS/WRITE\",\n                                \"MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMAND/ACTION\",\n                                \"MICROSOFT.HYBRIDCOMPUTE/MACHINES/RUNCOMMANDS/WRITE\")\n| where ActivityStatusValue in~ (\"Start\", \"Accept\", \"Success\")\n| where tolower(Caller) !in (AllowedCallers)\n| summarize Invocations = dcount(CorrelationId),\n            Statuses = make_set(ActivityStatusValue, 5),\n            FirstSeen = min(TimeGenerated),\n            LastSeen = max(TimeGenerated)\n            by Caller, CallerIpAddress, ResourceId = _ResourceId, ResourceGroup, SubscriptionId,\n               Operation = OperationNameValue\n| project FirstSeen, LastSeen, Caller, CallerIpAddress, ResourceId, ResourceGroup, SubscriptionId, Operation,\n          Invocations, Statuses",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT5H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Execution"
+        ],
+        "techniques": [
+          "T1059"
+        ],
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT5H",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Caller"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "CallerIpAddress"
+              }
+            ]
+          },
+          {
+            "entityType": "AzureResource",
+            "fieldMappings": [
+              {
+                "identifier": "ResourceId",
+                "columnName": "ResourceId"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Invocations": "Invocations",
+          "Operation": "Operation",
+          "ResourceGroup": "ResourceGroup"
+        }
+      }
+    }
+  ]
+}

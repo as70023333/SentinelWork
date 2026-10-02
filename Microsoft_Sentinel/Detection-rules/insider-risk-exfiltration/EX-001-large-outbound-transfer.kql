@@ -1,0 +1,43 @@
+// Title: Large outbound transfer to one external address
+// Id: EX-001
+// Severity: Medium
+// Tactics: Exfiltration
+// Techniques: T1048
+// Tables: CommonSecurityLog
+// Frequency: PT1H
+// Period: PT1H
+// Entities: IP(Address=SourceIP); IP(Address=DestinationIP); Account(Name=SourceUser)
+// Custom details: SentGB, UploadRatio, Sessions, Firewall
+// Description: According to the firewall, one internal address sent more than a gigabyte to a single
+//   internet address within an hour. Most traffic downloads more than it uploads, so a large upload
+//   to one place is worth a look whether it is a backup, a sync client or someone taking data out.
+// False positives: Cloud backup, file sync, video conferencing, software distribution and replication
+//   to a partner or another site over the internet.
+// Tuning: Add the destinations you expect (backup provider, your other sites) to AllowedDestinations
+//   and servers that upload by design to AllowedSources. Change MinBytes to suit your links.
+// Response: Identify the device and user behind the source address and the owner of the destination.
+//   If the destination is a file sharing or personal storage service, ask the user what was sent.
+// References: https://attack.mitre.org/techniques/T1048/
+let MinBytes = 1073741824;
+let AllowedDestinations = dynamic([]);
+let AllowedSources = dynamic([]);
+CommonSecurityLog
+| where TimeGenerated > ago(1h)
+| where isnotempty(SourceIP) and isnotempty(DestinationIP)
+| where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+| where DestinationIP !in (AllowedDestinations) and SourceIP !in (AllowedSources)
+| summarize BytesSent = sum(SentBytes),
+            BytesReceived = sum(ReceivedBytes),
+            Sessions = count(),
+            Ports = make_set(DestinationPort, 10),
+            DestinationHosts = make_set(DestinationHostName, 10),
+            SourceUser = take_any(SourceUserName),
+            Firewall = take_any(strcat(DeviceVendor, " ", DeviceProduct)),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated)
+            by SourceIP, DestinationIP
+| where BytesSent >= MinBytes
+| extend SentGB = round(BytesSent / 1073741824.0, 2),
+         UploadRatio = round(todouble(BytesSent) / todouble(BytesReceived + 1), 1)
+| project FirstSeen, LastSeen, SourceIP, SourceUser, DestinationIP, DestinationHosts, Ports, SentGB, UploadRatio,
+          Sessions, Firewall

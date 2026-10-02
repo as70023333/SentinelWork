@@ -1,0 +1,40 @@
+// Title: Many Azure resources deleted by one caller
+// Id: AZ-003
+// Severity: High
+// Tactics: Impact
+// Techniques: T1485
+// Tables: AzureActivity
+// Frequency: PT1H
+// Period: PT1H
+// Entities: Account(FullName=Caller); IP(Address=CallerIpAddress)
+// Custom details: DeletedResources, ResourceGroups, SubscriptionId
+// Description: One caller deleted an unusually large number of Azure resources in an hour. A
+//   compromised administrator or a leaked service principal secret can destroy an environment this
+//   way, and it is also what an expensive mistake in a script looks like while it is still running.
+// False positives: Tearing down a test environment, a pipeline that recreates resources, and clean-up
+//   after a project ends.
+// Tuning: Raise MinResources if environments are rebuilt daily. Exclude the pipeline identity for
+//   non-production subscriptions only.
+// Response: Contact the caller at once. If the deletion is not theirs, disable the identity, remove
+//   its role assignments and begin recovery (soft delete and backups) while the retention lasts.
+// References: https://attack.mitre.org/techniques/T1485/
+let MinResources = 20;
+let AllowedCallers = dynamic([]);
+AzureActivity
+| where TimeGenerated > ago(1h)
+| where OperationNameValue endswith "/DELETE" and ActivityStatusValue =~ "Success"
+// Deployment records, role assignments and tags are not resources in the sense that matters here.
+| where OperationNameValue !startswith "MICROSOFT.RESOURCES/DEPLOYMENTS"
+    and OperationNameValue !startswith "MICROSOFT.AUTHORIZATION/"
+    and OperationNameValue !startswith "MICROSOFT.RESOURCES/TAGS"
+| where tolower(Caller) !in (AllowedCallers)
+| summarize DeletedResources = dcount(_ResourceId),
+            ResourceTypes = make_set(OperationNameValue, 15),
+            ResourceGroups = strcat_array(make_set(ResourceGroup, 15), ", "),
+            ResourceSample = make_set(_ResourceId, 15),
+            FirstSeen = min(TimeGenerated),
+            LastSeen = max(TimeGenerated)
+            by Caller, CallerIpAddress, SubscriptionId
+| where DeletedResources >= MinResources
+| project FirstSeen, LastSeen, Caller, CallerIpAddress, SubscriptionId, DeletedResources, ResourceGroups,
+          ResourceTypes, ResourceSample

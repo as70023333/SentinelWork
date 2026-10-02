@@ -1,0 +1,38 @@
+// Title: Recipient clicked a link in mail that was later removed as malicious
+// Id: EM-004
+// Severity: High
+// Tactics: InitialAccess
+// Techniques: T1566
+// Sub-techniques: T1566.002
+// Tables: EmailPostDeliveryEvents, UrlClickEvents
+// Frequency: PT1H
+// Period: P7D
+// Entities: Account(FullName=AccountUpn); URL(Url=Url); IP(Address=IPAddress); MailMessage(NetworkMessageId=NetworkMessageId, Sender=SenderFromAddress)
+// Custom details: RemovalType, Clicks, FirstClick, RemovedAt
+// Description: Zero-hour auto purge removed a delivered message as phishing or malware in the last
+//   hour, and a recipient had already clicked a link in that message. The mail was treated as safe
+//   when the user clicked, so Safe Links did not stop them; this rule finds the people exposed in
+//   the gap between delivery and removal.
+// False positives: Few. A message removed by mistake and later released is the main one.
+// Tuning: Nothing to tune in most tenants. The seven day window is how far back clicks are matched.
+// Response: Handle each account as phished: revoke sessions, reset the password, review sign-ins and
+//   mailbox rules created after FirstClick.
+// References: https://learn.microsoft.com/defender-office-365/zero-hour-auto-purge
+let Removed = EmailPostDeliveryEvents
+    | where TimeGenerated > ago(1h)
+    | where ActionType in~ ("Phish ZAP", "Malware ZAP")
+    | summarize RemovedAt = min(TimeGenerated),
+                RemovalType = take_any(ActionType),
+                SenderFromAddress = take_any(SenderFromAddress)
+                by NetworkMessageId;
+UrlClickEvents
+| where TimeGenerated > ago(7d)
+| where ActionType == "ClickAllowed" or IsClickedThrough == true
+| join kind=inner Removed on NetworkMessageId
+| where TimeGenerated <= RemovedAt
+| summarize Clicks = count(),
+            FirstClick = min(TimeGenerated),
+            Url = take_any(Url),
+            IPAddress = take_any(IPAddress)
+            by AccountUpn, NetworkMessageId, RemovalType, RemovedAt, SenderFromAddress
+| project FirstClick, RemovedAt, AccountUpn, Url, IPAddress, Clicks, RemovalType, SenderFromAddress, NetworkMessageId
