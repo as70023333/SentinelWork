@@ -121,7 +121,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "union isfuzzy=true\r\n    (CommonSecurityLog\r\n     | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false\r\n     | summarize Value = round(sum(SentBytes) / 1073741824.0, 1)\r\n     | extend Metric = \"GB sent to the internet (firewall)\", Position = 1),\r\n    (DeviceEvents\r\n     | where ActionType == \"UsbDriveMounted\"\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"USB drives mounted\", Position = 2),\r\n    (CloudAppEvents\r\n     | where ActionType in~ (\"FileDownloaded\", \"FileSyncDownloadedFull\")\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"Files downloaded from SharePoint and OneDrive\", Position = 3),\r\n    (CloudAppEvents\r\n     | where ActionType in~ (\"AnonymousLinkCreated\", \"SharingInvitationCreated\", \"SecureLinkCreated\", \"CompanyLinkCreated\")\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"Sharing links and invitations created\", Position = 4)\r\n| order by Position asc\r\n| project Metric, Value",
+              "query": "union isfuzzy=true\r\n    (CommonSecurityLog\r\n     | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false\r\n     | summarize Value = round(sum(SentBytes) / 1073741824.0, 1)\r\n     | extend Metric = \"GB sent to the internet (firewall)\", Position = 1),\r\n    (DeviceEvents\r\n     | where ActionType == \"UsbDriveMounted\"\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"USB drives mounted\", Position = 2),\r\n    (CloudAppEvents\r\n     | where ActionType in~ (\"FileDownloaded\", \"FileSyncDownloadedFull\")\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"Files downloaded from SharePoint and OneDrive\", Position = 3),\r\n    (CloudAppEvents\r\n     | where ActionType in~ (\"AnonymousLinkCreated\", \"SharingInvitationCreated\", \"SecureLinkCreated\", \"CompanyLinkCreated\",\r\n                             \"AddedToSecureLink\")\r\n     | summarize Value = todouble(count())\r\n     | extend Metric = \"Sharing links and invitations created\", Position = 4)\r\n| order by Position asc\r\n| project Metric, Value",
               "size": 4,
               "title": "In the time range",
               "noDataMessage": "No data in the selected time range.",
@@ -572,7 +572,7 @@
           {
             "type": 1,
             "content": {
-              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
             },
             "customWidth": "100",
             "name": "detections-1"
@@ -745,7 +745,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"Large outbound transfer to one external address\", \"Many files copied to removable media\", \"Mass download from SharePoint or OneDrive\", \"Cloud copy or file transfer tool executed\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"Large outbound transfer to one external address\", \"Many files copied to removable media\", \"Mass download from SharePoint or OneDrive\", \"Cloud copy or file transfer tool executed\"]);\r\nlet RuleIds = dynamic([\"6805bf8b-47c4-5553-a5be-c6e47c4bb2ca\", \"7f9301b9-112c-59f5-b790-994eadfedf83\", \"8c637be0-b121-5f68-a4c1-d99d0a10a160\", \"6f962748-3af3-5613-9780-4f03271f8bff\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents created by these rules",
               "noDataMessage": "No incidents from these rules in the time range.",

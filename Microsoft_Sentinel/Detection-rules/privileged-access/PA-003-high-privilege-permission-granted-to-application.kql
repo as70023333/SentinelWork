@@ -5,9 +5,9 @@
 // Techniques: T1098, T1528
 // Tables: AuditLogs
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: Account(FullName=Actor); IP(Address=ActorIP); CloudApplication(Name=ApplicationName)
-// Custom details: Permissions, Operation, AdminConsent
+// Custom details: HighRiskGranted, Operation, AdminConsent
 // Description: An application was granted a permission that lets it read or send mail, read every
 //   file, or change the directory, through user or admin consent, an application permission, or a
 //   delegated grant. Consent phishing ends with exactly this event, and an attacker who controls an
@@ -26,7 +26,9 @@ let HighRiskPermissions = dynamic([
     "Group.ReadWrite.All", "Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All",
     "RoleManagement.ReadWrite.Directory", "Policy.ReadWrite.ConditionalAccess"]);
 AuditLogs
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where LoggedByService =~ "Core Directory" and Result =~ "success"
 | where OperationName in~ ("Consent to application", "Add app role assignment to service principal",
                            "Add delegated permission grant")
@@ -34,13 +36,18 @@ AuditLogs
 | where Changes has_any (HighRiskPermissions)
 | mv-apply Property = TargetResources[0].modifiedProperties on (
     summarize Values = make_bag(bag_pack(tostring(Property.displayName), trim(@'"', tostring(Property.newValue)))))
-| extend Permissions = strcat_delim(" ", tostring(Values["ConsentAction.Permissions"]), tostring(Values["AppRole.Value"]),
-                                    tostring(Values["DelegatedPermissionGrant.Scope"])),
+| extend Permissions = trim(" ", strcat_delim(" ", tostring(Values["ConsentAction.Permissions"]),
+                                              tostring(Values["AppRole.Value"]),
+                                              tostring(Values["DelegatedPermissionGrant.Scope"]))),
          AdminConsent = tostring(Values["ConsentContext.IsAdminConsent"]),
          // For a consent the application is the target; for the other two it is named in the properties.
          ApplicationName = coalesce(tostring(Values["ServicePrincipal.DisplayName"]),
                                     tostring(TargetResources[0].displayName)),
          Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName)),
          ActorIP = tostring(InitiatedBy.user.ipAddress)
-| project TimeGenerated, ApplicationName, Permissions = trim(" ", Permissions), AdminConsent,
-          Operation = OperationName, Actor, ActorIP, CorrelationId
+// The full permission text is long; the alert carries only the high-risk names found in it.
+| extend Named = set_intersect(extract_all(@"((?:[A-Za-z]+\.)+[A-Za-z]+|full_access_as_app)", Permissions),
+                               HighRiskPermissions)
+| extend HighRiskGranted = iff(array_length(Named) > 0, strcat_array(Named, ", "), "See the Permissions column")
+| project TimeGenerated, ApplicationName, HighRiskGranted, AdminConsent, Operation = OperationName, Actor, ActorIP,
+          Permissions = substring(Permissions, 0, 2000), CorrelationId

@@ -1,11 +1,9 @@
 // Title: Analytics rule is failing to run
 // Id: SO-002
 // Severity: Medium
-// Tactics: DefenseEvasion
-// Techniques: T1562
 // Tables: SentinelHealth
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Incidents: CustomDetails(RuleName), P1D
 // Custom details: RuleName, Failures, Reason, RuleKind
 // Description: A scheduled or near-real-time analytics rule failed more than once in the last hour.
@@ -19,7 +17,9 @@
 // References: https://learn.microsoft.com/azure/sentinel/monitor-analytics-rule-integrity
 let MinFailures = 2;
 SentinelHealth
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where SentinelResourceType =~ "Analytics Rule" and Status =~ "Failure"
 | summarize Failures = count(),
             FirstFailure = min(TimeGenerated),

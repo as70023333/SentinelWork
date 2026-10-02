@@ -18,9 +18,10 @@ Ten workbooks for Microsoft Sentinel. Seven are the SOC set that goes with the
 Every one of them has the same layout:
 
 - A **time range** picker at the top (default 7 days; 14 for privileged access, 30 for SOC
-  operations). Every tile, chart and table follows it.
-- **Tabs**. The first is an overview with headline numbers and trends; the middle ones are for
-  investigating; the last is always **Detections**.
+  operations). Every tile, chart and table follows it, except the few that show what is true right
+  now (open incidents, table freshness); those say in their title how far back they look.
+- **Tabs**. The first has the headline numbers and trends; the middle ones are for investigating;
+  the last is always **Detections**.
 - The **Detections** tab lists the detection rules of that area with the number of alerts each
   raised, a chart of alerts over time, the latest alerts with their details, and the incidents they
   created with status, owner and what the Autonomous SOC Analyst decided. A rule showing 0 alerts
@@ -57,7 +58,9 @@ az deployment group create \
 ```
 
 They appear under **Workbooks**, **My workbooks**. Deploying again updates the same seven
-workbooks; it does not add copies, and it replaces any edits made to them in the portal.
+workbooks; it does not add copies, and it replaces any edits made to them in the portal. (A
+workbook is recognised by the name of its `.toml` source file, so renaming that file makes the next
+deployment create a new workbook next to the old one.)
 
 A part of a workbook that reads a table you do not collect shows an error for that part only. The
 optional tables (`Syslog`, `SentinelHealth`) show an empty table instead.
@@ -85,8 +88,12 @@ Other table settings: `severity = "Column"` colours High, Medium, Low and Inform
 `link = "Column"` with `link_label` turns a URL column into a link; `hide = [...]` hides columns;
 `rows` limits the rows shown; `palette` sets the colour of bars and shading. Tiles need `label`
 and `value` (the columns holding the tile name and number). Charts accept
-`colours = { SeriesName = "colour" }`. Inside a query, `{TimeRange:grain}` is the bucket size the
-workbook picks for the selected time range; the time range itself is applied for you.
+`colours = { SeriesName = "colour" }`. Any item can set `range = "90d"` to ignore the picker and
+always look back that far. The widths of the items on a row must add up to 100.
+
+The selected time range is applied to every query for you (to `TimeGenerated`). Inside a query,
+`{TimeRange:grain}` is the bucket size the workbook picks for the range, and `{TimeRange:start}`
+and `{TimeRange:end}` are its two ends, for filtering on another time column such as `CreatedTime`.
 
 After editing, run `python -m sentinel_content build` from [../Content_Build](../Content_Build/)
 and commit the `.toml` file together with the regenerated `.json` files. The Detections tab is not
@@ -95,10 +102,11 @@ adding a rule there adds it to the workbook.
 
 ## How these workbooks were checked, and what was not
 
-Checked: every query against the published table schemas and with Microsoft's KQL parser on every
-push (see [../Content_Build](../Content_Build/)); the workbook JSON against Microsoft's workbook
-schema; the structure (time range parameter, tabs, tiles, grid formatting) against the workbook
-templates Microsoft publishes for Sentinel.
+Checked: every query against the published table schemas and with Microsoft's KQL parser, in CI
+on every pull request (see [../Content_Build](../Content_Build/)), including that every column
+shown as a number, bar or shading holds numbers. Once, by hand: the workbook JSON against
+Microsoft's workbook schema, and the structure (time range parameter, tabs, tiles, grid formatting)
+property by property against some 70 workbook templates Microsoft publishes for Sentinel.
 
 **Not checked: the workbooks have not been opened in a portal by the author.** The queries are
 valid KQL for the documented schemas, but layout and formatting are only known to be well formed,

@@ -5,26 +5,34 @@
 // Techniques: T1048
 // Tables: CommonSecurityLog
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: IP(Address=SourceIP); IP(Address=DestinationIP); Account(Name=SourceUser)
 // Custom details: SentGB, UploadRatio, Sessions, Firewall
 // Description: According to the firewall, one internal address sent more than a gigabyte to a single
 //   internet address within an hour. Most traffic downloads more than it uploads, so a large upload
 //   to one place is worth a look whether it is a backup, a sync client or someone taking data out.
+//   Only IPv4 is evaluated.
 // False positives: Cloud backup, file sync, video conferencing, software distribution and replication
-//   to a partner or another site over the internet.
+//   to a partner or another site over the internet. A firewall that also logs running totals for
+//   sessions still in progress makes the figure too high, because the same bytes are added twice.
 // Tuning: Add the destinations you expect (backup provider, your other sites) to AllowedDestinations
-//   and servers that upload by design to AllowedSources. Change MinBytes to suit your links.
+//   and servers that upload by design to AllowedSources. Change MinBytes to suit your links. If your
+//   firewall writes interim session records, add a filter that keeps only its end-of-session records.
 // Response: Identify the device and user behind the source address and the owner of the destination.
 //   If the destination is a file sharing or personal storage service, ask the user what was sent.
 // References: https://attack.mitre.org/techniques/T1048/
 let MinBytes = 1073741824;
 let AllowedDestinations = dynamic([]);
 let AllowedSources = dynamic([]);
+// Not private, but not the internet either: carrier NAT, link-local, loopback, multicast, broadcast.
+let NotInternet = dynamic(["100.64.0.0/10", "169.254.0.0/16", "127.0.0.0/8", "224.0.0.0/4", "255.255.255.255/32"]);
 CommonSecurityLog
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where isnotempty(SourceIP) and isnotempty(DestinationIP)
 | where ipv4_is_private(SourceIP) == true and ipv4_is_private(DestinationIP) == false
+| where not(ipv4_is_in_any_range(DestinationIP, NotInternet))
 | where DestinationIP !in (AllowedDestinations) and SourceIP !in (AllowedSources)
 | summarize BytesSent = sum(SentBytes),
             BytesReceived = sum(ReceivedBytes),

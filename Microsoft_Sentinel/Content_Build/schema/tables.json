@@ -763,21 +763,6 @@
    "TimeGenerated": "datetime",
    "Type": "string"
   },
-  "EmailUrlInfo": {
-   "_BilledSize": "real",
-   "_IsBillable": "string",
-   "NetworkMessageId": "string",
-   "ReportId": "string",
-   "SourceSystem": "string",
-   "TenantId": "string",
-   "TimeGenerated": "datetime",
-   "Type": "string",
-   "Url": "string",
-   "UrlChainId": "string",
-   "UrlChainPosition": "int",
-   "UrlDomain": "string",
-   "UrlLocation": "string"
-  },
   "SecurityAlert": {
    "_BilledSize": "real",
    "_IsBillable": "string",

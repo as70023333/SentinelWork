@@ -5,12 +5,13 @@
 // Techniques: T1485
 // Tables: AzureActivity
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: Account(FullName=Caller); IP(Address=CallerIpAddress)
-// Custom details: DeletedResources, ResourceGroups, SubscriptionId
-// Description: One caller deleted an unusually large number of Azure resources in an hour. A
-//   compromised administrator or a leaked service principal secret can destroy an environment this
-//   way, and it is also what an expensive mistake in a script looks like while it is still running.
+// Custom details: DeletedResources, ResourceGroups, Subscriptions
+// Description: One caller deleted an unusually large number of Azure resources in an hour, counted
+//   across all subscriptions and addresses the caller used. A compromised administrator or a leaked
+//   service principal secret can destroy an environment this way, and it is also what an expensive
+//   mistake in a script looks like while it is still running.
 // False positives: Tearing down a test environment, a pipeline that recreates resources, and clean-up
 //   after a project ends.
 // Tuning: Raise MinResources if environments are rebuilt daily. Exclude the pipeline identity for
@@ -21,20 +22,24 @@
 let MinResources = 20;
 let AllowedCallers = dynamic([]);
 AzureActivity
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where OperationNameValue endswith "/DELETE" and ActivityStatusValue =~ "Success"
 // Deployment records, role assignments and tags are not resources in the sense that matters here.
 | where OperationNameValue !startswith "MICROSOFT.RESOURCES/DEPLOYMENTS"
     and OperationNameValue !startswith "MICROSOFT.AUTHORIZATION/"
     and OperationNameValue !startswith "MICROSOFT.RESOURCES/TAGS"
-| where tolower(Caller) !in (AllowedCallers)
+| where Caller !in~ (AllowedCallers)
 | summarize DeletedResources = dcount(_ResourceId),
             ResourceTypes = make_set(OperationNameValue, 15),
             ResourceGroups = strcat_array(make_set(ResourceGroup, 15), ", "),
+            Subscriptions = strcat_array(make_set(SubscriptionId, 10), ", "),
             ResourceSample = make_set(_ResourceId, 15),
+            CallerIpAddress = take_any(CallerIpAddress),
             FirstSeen = min(TimeGenerated),
             LastSeen = max(TimeGenerated)
-            by Caller, CallerIpAddress, SubscriptionId
+            by Caller
 | where DeletedResources >= MinResources
-| project FirstSeen, LastSeen, Caller, CallerIpAddress, SubscriptionId, DeletedResources, ResourceGroups,
+| project FirstSeen, LastSeen, Caller, CallerIpAddress, Subscriptions, DeletedResources, ResourceGroups,
           ResourceTypes, ResourceSample

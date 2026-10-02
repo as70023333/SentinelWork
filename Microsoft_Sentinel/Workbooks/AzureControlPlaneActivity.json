@@ -309,7 +309,7 @@
               "gridSettings": {
                 "formatters": [],
                 "filter": true,
-                "rowLimit": 250
+                "rowLimit": 500
               }
             },
             "customWidth": "100",
@@ -322,9 +322,9 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Success\"\r\n| where OperationNameValue startswith \"MICROSOFT.AUTHORIZATION/\"\r\n    or OperationNameValue startswith \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/\"\r\n    or OperationNameValue has \"RUNCOMMAND\"\r\n    or OperationNameValue has \"LISTKEYS\"\r\n| where OperationNameValue !endswith \"/READ\"\r\n| summarize Operations = count() by Caller\r\n| top 15 by Operations desc",
+              "query": "let Sensitive = datatable(Operation:string, Meaning:string) [\r\n    \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE\", \"Role assigned\",\r\n    \"MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE\", \"Role assignment removed\",\r\n    \"MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/WRITE\", \"Custom role created or changed\",\r\n    \"MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION\", \"Global Administrator elevated to User Access Administrator\",\r\n    \"MICROSOFT.AUTHORIZATION/LOCKS/DELETE\", \"Resource lock removed\",\r\n    \"MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE\", \"Policy assignment removed\",\r\n    \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE\", \"Diagnostic setting deleted\",\r\n    \"MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE\", \"Diagnostic setting changed\",\r\n    \"MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DELETE\", \"Log Analytics workspace deleted\",\r\n    \"MICROSOFT.SECURITYINSIGHTS/ALERTRULES/DELETE\", \"Sentinel analytics rule deleted\",\r\n    \"MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE\", \"Network security group rule changed\",\r\n    \"MICROSOFT.NETWORK/PUBLICIPADDRESSES/WRITE\", \"Public IP address created or changed\",\r\n    \"MICROSOFT.KEYVAULT/VAULTS/ACCESSPOLICIES/WRITE\", \"Key vault access policy changed\",\r\n    \"MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION\", \"Storage account keys listed\",\r\n    \"MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION\", \"Run Command on a virtual machine\",\r\n    \"MICROSOFT.COMPUTE/VIRTUALMACHINES/EXTENSIONS/WRITE\", \"Virtual machine extension installed\",\r\n    \"MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION\", \"Disk export (SAS) started\",\r\n    \"MICROSOFT.COMPUTE/SNAPSHOTS/WRITE\", \"Disk snapshot created\"\r\n];\r\nAzureActivity\r\n| where ActivityStatusValue =~ \"Success\"\r\n| extend Operation = toupper(OperationNameValue)\r\n| join kind=inner Sensitive on Operation\r\n| summarize Operations = count() by Caller\r\n| top 15 by Operations desc",
               "size": 0,
-              "title": "Sensitive operations by caller",
+              "title": "The same operations, by caller",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
                 "durationMs": 0
@@ -395,7 +395,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Failure\"\r\n| summarize Failures = count(),\r\n            Refused = countif(ActivitySubstatusValue in~ (\"Forbidden\", \"Unauthorized\")),\r\n            Operations = dcount(OperationNameValue),\r\n            Examples = strcat_array(make_set(OperationNameValue, 5), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Caller, Address = CallerIpAddress\r\n| top 50 by Refused desc",
+              "query": "AzureActivity\r\n| where ActivityStatusValue =~ \"Failure\"\r\n| summarize Failures = count(),\r\n            Refused = countif(ActivitySubstatusValue in~ (\"Forbidden\", \"Unauthorized\")),\r\n            Operations = dcount(OperationNameValue),\r\n            Examples = strcat_array(make_set(OperationNameValue, 5), \", \"),\r\n            LastSeen = max(TimeGenerated)\r\n            by Caller, Address = CallerIpAddress\r\n| where Refused > 0\r\n| top 50 by Refused desc",
               "size": 0,
               "title": "Callers being refused",
               "noDataMessage": "No data in the selected time range.",
@@ -481,7 +481,7 @@
           {
             "type": 1,
             "content": {
-              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
             },
             "customWidth": "100",
             "name": "detections-1"
@@ -654,7 +654,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"Azure diagnostic settings deleted\", \"Owner or other privileged Azure role assigned\", \"Many Azure resources deleted by one caller\", \"Run Command executed on a virtual machine\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"Azure diagnostic settings deleted\", \"Owner or other privileged Azure role assigned\", \"Many Azure resources deleted by one caller\", \"Run Command executed on a virtual machine\"]);\r\nlet RuleIds = dynamic([\"b6ad0dc6-a84c-5f7c-ab97-0544db24b2e9\", \"0bce4b20-af76-5f31-ab81-71acb73e92ee\", \"7ea2fe36-0711-5ede-a437-e54475ef640a\", \"90fad50a-216f-5e78-8932-d335079ec4f7\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents created by these rules",
               "noDataMessage": "No incidents from these rules in the time range.",

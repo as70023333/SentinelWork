@@ -618,7 +618,7 @@
           {
             "type": 1,
             "content": {
-              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
             },
             "customWidth": "100",
             "name": "detections-1"
@@ -791,7 +791,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"Password spray from a single IP address\", \"Repeated MFA denials followed by a successful sign-in\", \"Successful sign-in from a country new for the user\", \"Successful sign-in with legacy authentication\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"Password spray from a single IP address\", \"Repeated MFA denials followed by a successful sign-in\", \"Successful sign-in from a country new for the user\", \"Successful sign-in with legacy authentication\"]);\r\nlet RuleIds = dynamic([\"07dec7c4-739b-532d-af40-42fb21e26b80\", \"831b9d58-0963-5eab-a47d-eeeb3abc5e70\", \"87b9d102-9b9f-525f-9cb8-86c89524b112\", \"583e2ac9-9a18-54af-ae9b-78731592650e\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents created by these rules",
               "noDataMessage": "No incidents from these rules in the time range.",

@@ -52,6 +52,13 @@ class TokenizerTests(unittest.TestCase):
         text = "// Title: x\n// more\nSigninLogs\n| where UserAgent has \"//\" // why\n| take 1\n"
         self.assertEqual(kql.strip_comments(text), 'SigninLogs\n| where UserAgent has "//"\n| take 1')
 
+    def test_strip_comments_leaves_no_empty_line_behind(self):
+        # The Logs editor ends a query at an empty line, so a removed comment must take its line with it.
+        text = "SigninLogs\n// why\n| where UserId == 'a'\n    // indented note\n| take 1 // tail\n// end\n"
+        self.assertEqual(kql.strip_comments(text), "SigninLogs\n| where UserId == 'a'\n| take 1")
+        self.assertEqual(kql.strip_comments("a\n\nb"), "a\n\nb")  # a real empty line is kept, and reported elsewhere
+        self.assertEqual(kql.strip_comments("// only a comment"), "")
+
 
 class NameCheckTests(unittest.TestCase):
     def test_a_valid_query_has_no_problems(self):
@@ -107,8 +114,15 @@ class NameCheckTests(unittest.TestCase):
         self.assertTrue(problems("SigninLogs | project UserId1"))
 
     def test_unbalanced_brackets(self):
-        self.assertIn("brackets are not balanced", problems("SigninLogs | where (ResultType == '0'"))
-        self.assertTrue(any("without an opening" in p for p in problems("SigninLogs | take 1)")))
+        self.assertEqual(problems("SigninLogs | where (ResultType == '0'"), ["line 1: '(' is never closed"])
+        self.assertEqual(problems("SigninLogs | take 1)"), ["line 1: closing ')' without an opening one"])
+        self.assertEqual(problems("SigninLogs\n| where (UserId == 'x']"), ["line 2: ']' closes the '(' opened on line 2"])
+
+    def test_reported_lines_can_be_file_lines(self):
+        query = "SigninLogs\n| where Nope == 1"
+        self.assertEqual(kql.check_names(query, SCHEMA)[0][:7], "line 2:")
+        self.assertEqual(kql.check_names(query, SCHEMA, first_line=20)[0][:8], "line 21:")
+        self.assertEqual(kql.check_names('SigninLogs | where a == "x', SCHEMA, first_line=20)[0][:8], "line 20:")
 
     def test_a_query_that_reads_no_table(self):
         self.assertTrue(any("does not read any table" in p for p in problems("print 1")))
@@ -124,13 +138,44 @@ class NameCheckTests(unittest.TestCase):
         self.assertIn("{TimeRange}", found[0])
 
     def test_has_placeholder(self):
-        self.assertTrue(kql.has_placeholder(kql.tokenize("T | where a > {TimeRange:start}")))
-        self.assertTrue(kql.has_placeholder(kql.tokenize("T | where a in ({Users})")))
-        self.assertFalse(kql.has_placeholder(kql.tokenize('let m = dynamic({"a": "b"}); T | where x == "{y}"')))
+        self.assertTrue(kql.has_placeholder("T | where a > {TimeRange:start}"))
+        self.assertTrue(kql.has_placeholder("T | where a in ({Users})"))
+        self.assertFalse(kql.has_placeholder('let m = dynamic({"a": "b"}); T | where x == "{y}" // {z}'))
+        self.assertFalse(kql.has_placeholder("let f = (x:string) { x }; T | take 1"))
 
-    def test_longest_ago(self):
-        self.assertEqual(kql.longest_ago_seconds("T | where a > ago(1h) and b between (ago(14d) .. ago(30m))"), 14 * 86400)
-        self.assertEqual(kql.longest_ago_seconds("// ago(30d)\nT | take 1"), 0)
+    def test_every_placeholder_becomes_valid_kql(self):
+        query = "SigninLogs | where TimeGenerated between ({TimeRange:start} .. {TimeRange:end}) | summarize Total = count() by bin(TimeGenerated, {TimeRange:grain})"
+        self.assertEqual(problems(query, workbook=True), [])
+        self.assertNotIn("{", kql.fill_placeholders(query))
+
+    def test_lookback_of_literals_names_and_now(self):
+        day = 86400
+        self.assertEqual(kql.lookback("T | where a > ago(1h) and b between (ago(14d) .. ago(30m))"), (14 * day, []))
+        self.assertEqual(kql.lookback("let Window = 30d; T | where a > ago(Window)"), (30 * day, []))
+        self.assertEqual(kql.lookback("T | where a > now() - 30d"), (30 * day, []))
+        self.assertEqual(kql.lookback("T | where a > ago(1.5d)"), (1.5 * day, []))
+        self.assertEqual(kql.lookback('// ago(30d)\nT | where a == "ago(99d)" | take 1'), (0, []))
+        self.assertEqual(kql.lookback("T | where a < now() and b.ago(c) == 1")[1], [])
+
+    def test_lookback_that_cannot_be_read_is_reported(self):
+        for query in ("T | where a > ago(Window)", "T | where a > ago(1h + 30m)", "T | where a > ago(time(30d))",
+                      "T | where a > ago(30days)", "T | where a > now(-30d)"):  # fmt: skip
+            with self.subTest(query=query):
+                seconds, unclear = kql.lookback(query)
+                self.assertEqual(len(unclear), 1, unclear)
+                self.assertTrue(unclear[0].startswith("line 1:"))
+
+    def test_a_schema_file_of_the_wrong_shape_is_refused(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        for content in ([], {"tables": {}}, {"tables": []}, {"tables": {"T": ["a"]}}, {"tables": {"T": {"a": 1}}}):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "tables.json"
+                path.write_text(json.dumps(content), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    kql.load_schema(path)
 
     def test_the_real_schema_loads(self):
         schema = kql.load_schema()

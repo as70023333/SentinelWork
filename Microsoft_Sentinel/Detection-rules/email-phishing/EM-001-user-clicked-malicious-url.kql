@@ -11,9 +11,10 @@
 // Custom details: ThreatTypes, Clicks, Subject, Workload
 // Description: Safe Links recorded a click on a URL it classes as phishing or malware, and the user
 //   reached the page: the click was allowed, or the user chose to continue past the warning. The
-//   alert adds the message the link arrived in when it was received in the last seven days.
-// False positives: A URL that was clean when clicked and classified later still means the user saw
-//   the page. Security staff opening a reported link from a production mailbox.
+//   alert adds the sender and subject of the message the link arrived in, when that message was
+//   received in the last seven days.
+// False positives: Security staff opening a reported link from a production mailbox, and a verdict
+//   that Microsoft later reverses.
 // Tuning: Turn off "Let users click through to the original URL" in the Safe Links policy to remove
 //   the click-through case entirely.
 // Response: Assume the user entered credentials: revoke sessions, reset the password, check sign-ins
@@ -21,11 +22,13 @@
 // References: https://learn.microsoft.com/defender-office-365/safe-links-about
 let Messages = EmailEvents
     | where TimeGenerated > ago(7d)
-    | summarize arg_max(TimeGenerated, SenderFromAddress, Subject, DeliveryAction) by NetworkMessageId
-    | project NetworkMessageId, SenderFromAddress, Subject, DeliveryAction;
+    | summarize arg_max(TimeGenerated, SenderFromAddress, Subject) by NetworkMessageId
+    | project NetworkMessageId, SenderFromAddress, Subject;
 UrlClickEvents
-| where TimeGenerated > ago(1h)
-| where isnotempty(ThreatTypes)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
+| where ThreatTypes has_any ("Phish", "Malware")
 | where ActionType == "ClickAllowed" or IsClickedThrough == true
 | summarize Clicks = count(),
             FirstClick = min(TimeGenerated),
@@ -35,4 +38,4 @@ UrlClickEvents
             by AccountUpn, Url, ThreatTypes, NetworkMessageId
 | join kind=leftouter Messages on NetworkMessageId
 | project FirstClick, LastClick, AccountUpn, Url, ThreatTypes, Clicks, IPAddress, Workload, NetworkMessageId,
-          SenderFromAddress, Subject, DeliveryAction
+          SenderFromAddress, Subject

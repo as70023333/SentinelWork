@@ -19,7 +19,9 @@
 //   mailbox rules created after FirstClick.
 // References: https://learn.microsoft.com/defender-office-365/zero-hour-auto-purge
 let Removed = EmailPostDeliveryEvents
-    | where TimeGenerated > ago(1h)
+    | where TimeGenerated > ago(2h)
+    // Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+    | where ingestion_time() > ago(1h)
     | where ActionType in~ ("Phish ZAP", "Malware ZAP")
     | summarize RemovedAt = min(TimeGenerated),
                 RemovalType = take_any(ActionType),

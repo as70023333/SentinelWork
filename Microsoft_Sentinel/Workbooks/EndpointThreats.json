@@ -121,7 +121,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "DeviceEvents\r\n| summarize Devices = dcount(DeviceId),\r\n            Detections = countif(ActionType == \"AntivirusDetection\"),\r\n            DevicesWithDetection = dcountif(DeviceId, ActionType == \"AntivirusDetection\"),\r\n            AsrBlocked = countif(ActionType startswith \"Asr\" and ActionType endswith \"Blocked\"),\r\n            AsrAudited = countif(ActionType startswith \"Asr\" and ActionType endswith \"Audited\"),\r\n            NetworkBlocked = countif(ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\")),\r\n            Tampering = countif(ActionType == \"TamperingAttempt\")\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Devices reporting\", \"Value\", Devices),\r\n    bag_pack(\"Metric\", \"Antivirus detections\", \"Value\", Detections),\r\n    bag_pack(\"Metric\", \"Devices with a detection\", \"Value\", DevicesWithDetection),\r\n    bag_pack(\"Metric\", \"ASR rule blocks\", \"Value\", AsrBlocked),\r\n    bag_pack(\"Metric\", \"ASR rule audits (not blocked)\", \"Value\", AsrAudited),\r\n    bag_pack(\"Metric\", \"Web and network protection blocks\", \"Value\", NetworkBlocked),\r\n    bag_pack(\"Metric\", \"Tampering attempts\", \"Value\", Tampering))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "query": "DeviceEvents\r\n| summarize Devices = dcount(DeviceId),\r\n            Detections = countif(ActionType == \"AntivirusDetection\"),\r\n            DevicesWithDetection = dcountif(DeviceId, ActionType == \"AntivirusDetection\"),\r\n            AsrBlocked = countif(ActionType startswith \"Asr\" and ActionType endswith \"Blocked\"),\r\n            AsrAudited = countif(ActionType startswith \"Asr\" and ActionType endswith \"Audited\"),\r\n            NetworkBlocked = countif(ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\")),\r\n            Tampering = countif(ActionType == \"TamperingAttempt\")\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Devices reporting\", \"Value\", Devices),\r\n    bag_pack(\"Metric\", \"Antivirus detections\", \"Value\", Detections),\r\n    bag_pack(\"Metric\", \"Devices with a detection\", \"Value\", DevicesWithDetection),\r\n    bag_pack(\"Metric\", \"ASR rule blocks\", \"Value\", AsrBlocked),\r\n    bag_pack(\"Metric\", \"ASR rule audits (not blocked)\", \"Value\", AsrAudited),\r\n    bag_pack(\"Metric\", \"Web and network protection blocks and warnings\", \"Value\", NetworkBlocked),\r\n    bag_pack(\"Metric\", \"Tampering attempts\", \"Value\", Tampering))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
               "size": 4,
               "title": "Protection events in the time range",
               "noDataMessage": "No data in the selected time range.",
@@ -164,7 +164,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "DeviceEvents\r\n| extend Event = case(\r\n    ActionType == \"AntivirusDetection\", \"Antivirus detection\",\r\n    ActionType startswith \"Asr\" and ActionType endswith \"Blocked\", \"ASR block\",\r\n    ActionType startswith \"Asr\" and ActionType endswith \"Audited\", \"ASR audit\",\r\n    ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\"), \"Web or network block\",\r\n    ActionType == \"TamperingAttempt\", \"Tampering attempt\",\r\n    \"\")\r\n| where isnotempty(Event)\r\n| summarize Events = count() by bin(TimeGenerated, {TimeRange:grain}), Event",
+              "query": "DeviceEvents\r\n| extend Event = case(\r\n    ActionType == \"AntivirusDetection\", \"Antivirus detection\",\r\n    ActionType startswith \"Asr\" and ActionType endswith \"Blocked\", \"ASR block\",\r\n    ActionType startswith \"Asr\" and ActionType endswith \"Audited\", \"ASR audit\",\r\n    ActionType in (\"ExploitGuardNetworkProtectionBlocked\", \"SmartScreenUrlWarning\"), \"Web or network block or warning\",\r\n    ActionType == \"TamperingAttempt\", \"Tampering attempt\",\r\n    \"\")\r\n| where isnotempty(Event)\r\n| summarize Events = count() by bin(TimeGenerated, {TimeRange:grain}), Event",
               "size": 0,
               "title": "Protection events over time",
               "noDataMessage": "No data in the selected time range.",
@@ -222,7 +222,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "DeviceEvents\r\n| where ActionType startswith \"Asr\"\r\n| extend AsrRule = replace_regex(ActionType, @\"(Blocked|Audited|Warned)$\", \"\")\r\n| summarize Blocked = countif(ActionType endswith \"Blocked\"),\r\n            Audited = countif(ActionType endswith \"Audited\"),\r\n            Devices = dcount(DeviceId),\r\n            LastSeen = max(TimeGenerated)\r\n            by AsrRule\r\n| order by Blocked desc, Audited desc",
+              "query": "DeviceEvents\r\n| where ActionType startswith \"Asr\"\r\n| extend AsrRule = replace_regex(ActionType, @\"(Blocked|Audited|WarnBypassed)$\", \"\")\r\n| summarize Blocked = countif(ActionType endswith \"Blocked\"),\r\n            Audited = countif(ActionType endswith \"Audited\"),\r\n            WarningBypassed = countif(ActionType endswith \"WarnBypassed\"),\r\n            Devices = dcount(DeviceId),\r\n            LastSeen = max(TimeGenerated)\r\n            by AsrRule\r\n| order by Blocked desc, Audited desc",
               "size": 0,
               "title": "Attack surface reduction rules that fired",
               "noDataMessage": "No data in the selected time range.",
@@ -397,9 +397,9 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "DeviceRegistryEvents\r\n| where ActionType == \"RegistryValueSet\"\r\n| where RegistryKey has @\"CurrentVersion\\Run\"\r\n| summarize Devices = dcount(DeviceId),\r\n            FirstSeen = min(TimeGenerated),\r\n            LastSeen = max(TimeGenerated),\r\n            SetBy = take_any(InitiatingProcessFileName),\r\n            ExampleDevice = take_any(DeviceName)\r\n            by ValueName = RegistryValueName, Program = RegistryValueData\r\n| order by Devices asc, LastSeen desc\r\n| take 250",
+              "query": "DeviceRegistryEvents\r\n| where ActionType == \"RegistryValueSet\"\r\n| where RegistryKey matches regex @\"(?i)\\\\CurrentVersion\\\\Run(Once)?$\"\r\n| summarize Devices = dcount(DeviceId),\r\n            FirstSeen = min(TimeGenerated),\r\n            LastSeen = max(TimeGenerated),\r\n            SetBy = take_any(InitiatingProcessFileName),\r\n            ExampleDevice = take_any(DeviceName)\r\n            by ValueName = RegistryValueName, Program = RegistryValueData\r\n| order by Devices asc, LastSeen desc\r\n| take 250",
               "size": 0,
-              "title": "New programs set to run at sign-in (Run and RunOnce keys)",
+              "title": "Programs set to run at sign-in (Run and RunOnce keys)",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
                 "durationMs": 0
@@ -569,7 +569,7 @@
           {
             "type": 1,
             "content": {
-              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
             },
             "customWidth": "100",
             "name": "detections-1"
@@ -742,7 +742,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"Credential dumping from LSASS or the registry\", \"Shadow copies or recovery options deleted\", \"Office application started a script interpreter\", \"PowerShell with an encoded command or an in-memory download\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"Credential dumping from LSASS or the registry\", \"Shadow copies or recovery options deleted\", \"Office application started a script interpreter\", \"PowerShell with an encoded command or an in-memory download\"]);\r\nlet RuleIds = dynamic([\"269b214c-4535-5db6-b90e-f0dc98dcfe58\", \"dff27c7a-6764-559f-9b03-062f14c91a21\", \"26bb6700-af0f-5b78-9717-ec1bf7046e3b\", \"51a410ac-bc9b-5cfb-bf02-8626d6aed0b4\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents created by these rules",
               "noDataMessage": "No incidents from these rules in the time range.",

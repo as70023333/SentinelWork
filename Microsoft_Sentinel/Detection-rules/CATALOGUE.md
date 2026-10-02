@@ -7,32 +7,32 @@ Detections tab of the workbook for its area.
 
 | Id | Rule | Severity | Tactics | Tables | Runs every | Reads |
 |---|---|---|---|---|---|---|
-| [ID-001](#id-001) | Password spray from a single IP address | Medium | CredentialAccess | `SigninLogs` | 1 hour | 1 hour |
-| [ID-002](#id-002) | Repeated MFA denials followed by a successful sign-in | High | CredentialAccess | `SigninLogs` | 1 hour | 2 hours |
+| [ID-001](#id-001) | Password spray from a single IP address | Medium | CredentialAccess | `SigninLogs` | 1 hour | 2 hours |
+| [ID-002](#id-002) | Repeated MFA denials followed by a successful sign-in | High | CredentialAccess | `SigninLogs` | 1 hour | 3 hours |
 | [ID-003](#id-003) | Successful sign-in from a country new for the user | Medium | InitialAccess | `SigninLogs` | 1 hour | 14 days |
-| [ID-004](#id-004) | Successful sign-in with legacy authentication | Medium | InitialAccess | `SigninLogs` | 1 hour | 1 hour |
-| [PA-001](#pa-001) | Account added to a privileged Entra ID role | High | Persistence, PrivilegeEscalation | `AuditLogs` | 1 hour | 1 hour |
-| [PA-002](#pa-002) | New secret or certificate added to an application or service principal | Medium | Persistence, PrivilegeEscalation | `AuditLogs` | 1 hour | 1 hour |
-| [PA-003](#pa-003) | High-privilege permission granted to an application | High | Persistence, PrivilegeEscalation, CredentialAccess | `AuditLogs` | 1 hour | 1 hour |
-| [PA-004](#pa-004) | Conditional Access policy disabled, changed or deleted | Medium | DefenseEvasion, Persistence | `AuditLogs` | 1 hour | 1 hour |
-| [EP-001](#ep-001) | Credential dumping from LSASS or the registry | High | CredentialAccess | `DeviceProcessEvents` | 1 hour | 1 hour |
-| [EP-002](#ep-002) | Shadow copies or recovery options deleted | High | Impact | `DeviceProcessEvents` | 1 hour | 1 hour |
-| [EP-003](#ep-003) | Office application started a script interpreter | High | Execution, InitialAccess | `DeviceProcessEvents` | 1 hour | 1 hour |
-| [EP-004](#ep-004) | PowerShell with an encoded command or an in-memory download | Medium | Execution, DefenseEvasion, CommandAndControl | `DeviceProcessEvents` | 1 hour | 1 hour |
+| [ID-004](#id-004) | Successful sign-in with legacy authentication | Medium | InitialAccess | `SigninLogs`, `AADNonInteractiveUserSignInLogs` | 1 hour | 2 hours |
+| [PA-001](#pa-001) | Account added to a privileged Entra ID role | High | Persistence, PrivilegeEscalation | `AuditLogs` | 1 hour | 2 hours |
+| [PA-002](#pa-002) | New secret or certificate added to an application or service principal | Medium | Persistence, PrivilegeEscalation | `AuditLogs` | 1 hour | 2 hours |
+| [PA-003](#pa-003) | High-privilege permission granted to an application | High | Persistence, PrivilegeEscalation, CredentialAccess | `AuditLogs` | 1 hour | 2 hours |
+| [PA-004](#pa-004) | Conditional Access policy disabled, changed or deleted | Medium | DefenseEvasion, Persistence | `AuditLogs` | 1 hour | 2 hours |
+| [EP-001](#ep-001) | Credential dumping from LSASS or the registry | High | CredentialAccess | `DeviceProcessEvents` | 1 hour | 2 hours |
+| [EP-002](#ep-002) | Shadow copies or recovery options deleted | High | Impact | `DeviceProcessEvents` | 1 hour | 2 hours |
+| [EP-003](#ep-003) | Office application started a script interpreter | High | Execution, InitialAccess | `DeviceProcessEvents` | 1 hour | 2 hours |
+| [EP-004](#ep-004) | PowerShell with an encoded command or an in-memory download | Medium | Execution, DefenseEvasion, CommandAndControl | `DeviceProcessEvents` | 1 hour | 2 hours |
 | [EM-001](#em-001) | User clicked through to a malicious URL | High | InitialAccess | `UrlClickEvents`, `EmailEvents` | 1 hour | 7 days |
-| [EM-002](#em-002) | Phishing or malware email delivered to several recipients | Medium | InitialAccess | `EmailEvents` | 1 hour | 1 hour |
-| [EM-003](#em-003) | Inbox rule that forwards, deletes or hides mail | Medium | Collection, DefenseEvasion | `CloudAppEvents` | 1 hour | 1 hour |
+| [EM-002](#em-002) | Phishing or malware email delivered to several recipients | Medium | InitialAccess | `EmailEvents` | 1 hour | 2 hours |
+| [EM-003](#em-003) | Inbox rule or mailbox setting that forwards, deletes or hides mail | Medium | Collection, DefenseEvasion | `CloudAppEvents` | 1 hour | 4 hours |
 | [EM-004](#em-004) | Recipient clicked a link in mail that was later removed as malicious | High | InitialAccess | `EmailPostDeliveryEvents`, `UrlClickEvents` | 1 hour | 7 days |
-| [AZ-001](#az-001) | Azure diagnostic settings deleted | Medium | DefenseEvasion | `AzureActivity` | 1 hour | 1 hour |
-| [AZ-002](#az-002) | Owner or other privileged Azure role assigned | High | Persistence, PrivilegeEscalation | `AzureActivity` | 1 hour | 1 hour |
-| [AZ-003](#az-003) | Many Azure resources deleted by one caller | High | Impact | `AzureActivity` | 1 hour | 1 hour |
-| [AZ-004](#az-004) | Run Command executed on a virtual machine | Medium | Execution | `AzureActivity` | 1 hour | 1 hour |
-| [EX-001](#ex-001) | Large outbound transfer to one external address | Medium | Exfiltration | `CommonSecurityLog` | 1 hour | 1 hour |
-| [EX-002](#ex-002) | Many files copied to removable media | Medium | Exfiltration | `DeviceEvents`, `DeviceFileEvents` | 1 hour | 1 day |
+| [AZ-001](#az-001) | Azure diagnostic settings deleted | Medium | DefenseEvasion | `AzureActivity` | 1 hour | 2 hours |
+| [AZ-002](#az-002) | Owner or other privileged Azure role assigned | High | Persistence, PrivilegeEscalation | `AzureActivity` | 1 hour | 3 hours |
+| [AZ-003](#az-003) | Many Azure resources deleted by one caller | High | Impact | `AzureActivity` | 1 hour | 2 hours |
+| [AZ-004](#az-004) | Run Command executed on a virtual machine | Medium | Execution | `AzureActivity` | 1 hour | 2 hours |
+| [EX-001](#ex-001) | Large outbound transfer to one external address | Medium | Exfiltration | `CommonSecurityLog` | 1 hour | 2 hours |
+| [EX-002](#ex-002) | Many files copied to removable media | Medium | Exfiltration | `DeviceEvents`, `DeviceFileEvents` | 1 hour | 7 days |
 | [EX-003](#ex-003) | Mass download from SharePoint or OneDrive | Medium | Collection, Exfiltration | `CloudAppEvents` | 1 hour | 14 days |
-| [EX-004](#ex-004) | Cloud copy or file transfer tool executed | Medium | Exfiltration | `DeviceProcessEvents` | 1 hour | 1 hour |
-| [SO-001](#so-001) | Log source stopped sending data | Medium | DefenseEvasion | `Usage` | 6 hours | 7 days |
-| [SO-002](#so-002) | Analytics rule is failing to run | Medium | DefenseEvasion | `SentinelHealth` | 1 hour | 1 hour |
+| [EX-004](#ex-004) | Cloud copy or file transfer tool executed | Medium | Exfiltration | `DeviceProcessEvents` | 1 hour | 2 hours |
+| [SO-001](#so-001) | Log source stopped sending data | Medium | Operational | `Usage` | 6 hours | 7 days |
+| [SO-002](#so-002) | Analytics rule is failing to run | Medium | Operational | `SentinelHealth` | 1 hour | 2 hours |
 | [SO-003](#so-003) | High severity incident not picked up within 30 minutes | Medium | Operational | `SecurityIncident` | 30 minutes | 2 hours |
 | [SO-004](#so-004) | One rule is creating an excessive number of incidents | Low | Operational | `SecurityIncident` | 1 day | 1 day |
 
@@ -50,16 +50,16 @@ Source: [ID-001-password-spray-from-single-ip.kql](identity-sign-ins/ID-001-pass
 | Severity | Medium |
 | MITRE ATT&CK | CredentialAccess; techniques: T1110, T1110.003 |
 | Tables | `SigninLogs` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | IP (IPAddress) |
 
-**What it finds.** One IP address failed the password check (error 50126) or hit smart lockout (50053) for many different accounts within an hour. Trying a few common passwords against many accounts is a password spray; a user who forgot a password fails many times on one account instead. The alert also says whether the same address signed in successfully during the hour, which is the difference between an attempt and a likely compromise.
+**What it finds.** One IP address failed to sign in to many different accounts within an hour: wrong password (error 50126), smart lockout (50053) or an account name that does not exist (50034). Trying a few common passwords against many accounts is a password spray; a user who forgot a password fails many times on one account instead. The alert also says whether any of the accounts that failed went on to sign in successfully from the same address.
 
-**False positives.** A shared egress address (office NAT, VPN, proxy) after a password-expiry wave or an outage that forces everyone to sign in again. A misconfigured application with stale credentials fails on one account many times and does not reach the account threshold.
+**False positives.** A shared egress address (office NAT, VPN, proxy) after a password-expiry wave or an outage that forces everyone to sign in again; some of those users will also show as successful, because they mistyped and then got it right. A misconfigured application with stale credentials fails on one account many times and does not reach the account threshold.
 
 **Tuning.** Lower MinAccounts for a small tenant. Add your own egress addresses to ExcludedIPs.
 
-**Response.** If Outcome reports a successful sign-in, treat those accounts as compromised: revoke sessions, reset the passwords and review their activity. Otherwise block the address and confirm smart lockout and the banned-password list are enabled.
+**Response.** Start with the accounts listed in SuccessfulAccounts: if the address is not yours, treat them as compromised, revoke sessions, reset the passwords and review their activity. Block the address and confirm smart lockout and the banned-password list are enabled.
 
 **References.** <https://learn.microsoft.com/security/operations/incident-response-playbook-password-spray>
 
@@ -73,10 +73,10 @@ Source: [ID-002-mfa-fatigue-denials-then-success.kql](identity-sign-ins/ID-002-m
 | Severity | High |
 | MITRE ATT&CK | CredentialAccess; techniques: T1621 |
 | Tables | `SigninLogs` |
-| Schedule | every 1 hour, reading the last 2 hours |
+| Schedule | every 1 hour, reading the last 3 hours |
 | Entities | Account (UserPrincipalName, UserId); IP (IPAddress) |
 
-**What it finds.** A user's multifactor prompt failed or was denied several times (error 500121) and a sign-in that required MFA then succeeded. That is the shape of MFA fatigue: an attacker who already has the password sends prompts until the user approves one.
+**What it finds.** A user's multifactor prompt failed or was denied several times (error 500121) and, within the hour after those denials, a sign-in that required MFA succeeded. That is the shape of MFA fatigue: an attacker who already has the password sends prompts until the user approves one. Only denials before the successful sign-in are counted.
 
 **False positives.** A user who mistypes a code or ignores prompts on a new phone and then gets it right. Those cases usually show one address and one device throughout.
 
@@ -118,11 +118,11 @@ Source: [ID-004-successful-legacy-authentication.kql](identity-sign-ins/ID-004-s
 |---|---|
 | Severity | Medium |
 | MITRE ATT&CK | InitialAccess; techniques: T1078, T1078.004 |
-| Tables | `SigninLogs` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Tables | `SigninLogs`, `AADNonInteractiveUserSignInLogs` |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (UserPrincipalName, UserId); IP (IPAddress) |
 
-**What it finds.** An account signed in successfully with a legacy protocol such as IMAP, POP, SMTP AUTH or Exchange ActiveSync. These protocols cannot do MFA, so a stolen password is all an attacker needs, which is why password sprays aim at them.
+**What it finds.** An account signed in successfully with a legacy protocol such as IMAP, POP, SMTP AUTH or Exchange ActiveSync. These protocols cannot do MFA, so a stolen password is all an attacker needs, which is why password sprays aim at them. Both interactive and non-interactive sign-ins are read; if the non-interactive table is not collected, the rule still runs on the other.
 
 **False positives.** Printers and scanners that send mail with SMTP AUTH, old mail clients, and line of business applications that have not moved to modern authentication.
 
@@ -146,14 +146,14 @@ Source: [PA-001-user-added-to-privileged-role.kql](privileged-access/PA-001-user
 | Severity | High |
 | MITRE ATT&CK | Persistence, PrivilegeEscalation; techniques: T1098, T1098.003 |
 | Tables | `AuditLogs` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (TargetAccount, TargetId); Account (Actor); IP (ActorIP) |
 
 **What it finds.** A user, group or service principal was given one of the directory roles that can take over the tenant, either directly or as a permanent or eligible assignment through Privileged Identity Management (PIM). A user activating a role they already hold in PIM is not reported.
 
 **False positives.** Planned changes by the identity team: a new administrator, a break-glass account, an access review outcome.
 
-**Tuning.** Edit PrivilegedRoles to match the roles you treat as tier 0. Exclude the automation account that applies approved changes, if you have one, by adding it to AllowedActors.
+**Tuning.** Edit PrivilegedRoles to match the roles you treat as tier 0; the names must match the role names in your audit log exactly. Exclude the automation account that applies approved changes, if you have one, by adding it to AllowedActors.
 
 **Response.** Confirm the change against a ticket with the person named in Actor. If nobody can account for it, remove the assignment, then treat the Actor account as compromised.
 
@@ -169,10 +169,10 @@ Source: [PA-002-credential-added-to-application.kql](privileged-access/PA-002-cr
 | Severity | Medium |
 | MITRE ATT&CK | Persistence, PrivilegeEscalation; techniques: T1098, T1098.001 |
 | Tables | `AuditLogs` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Actor); IP (ActorIP); CloudApplication (ApplicationName) |
 
-**What it finds.** A client secret or certificate was added to an app registration or service principal. Whoever holds the new credential can sign in as that application with its permissions, without a user or MFA, and keeps that access after the user account that added it is cleaned up.
+**What it finds.** A client secret or certificate was added to an app registration or service principal. Whoever holds the new credential can sign in as that application with its permissions, without a user or MFA, and keeps that access after the user account that added it is cleaned up. The rule compares the credentials before and after the change, so a credential swapped for another one is reported and a removal is not.
 
 **False positives.** Developers and pipelines rotating secrets before they expire; onboarding a new integration.
 
@@ -192,7 +192,7 @@ Source: [PA-003-high-privilege-permission-granted-to-application.kql](privileged
 | Severity | High |
 | MITRE ATT&CK | Persistence, PrivilegeEscalation, CredentialAccess; techniques: T1098, T1528 |
 | Tables | `AuditLogs` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Actor); IP (ActorIP); CloudApplication (ApplicationName) |
 
 **What it finds.** An application was granted a permission that lets it read or send mail, read every file, or change the directory, through user or admin consent, an application permission, or a delegated grant. Consent phishing ends with exactly this event, and an attacker who controls an administrator uses it to give their own application lasting access.
@@ -215,7 +215,7 @@ Source: [PA-004-conditional-access-policy-changed.kql](privileged-access/PA-004-
 | Severity | Medium |
 | MITRE ATT&CK | DefenseEvasion, Persistence; techniques: T1556, T1556.009 |
 | Tables | `AuditLogs` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Actor); IP (ActorIP) |
 
 **What it finds.** A Conditional Access policy was updated or deleted. These policies are what enforce MFA, device compliance and location rules, so weakening one is a quiet way to keep access to a compromised account. The alert says whether the policy was deleted, switched off or edited.
@@ -242,10 +242,10 @@ Source: [EP-001-credential-dumping-from-lsass-or-registry.kql](endpoint-threats/
 | Severity | High |
 | MITRE ATT&CK | CredentialAccess; techniques: T1003, T1003.001, T1003.002 |
 | Tables | `DeviceProcessEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
-| Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine); FileHash (HashAlgorithm, SHA256) |
+| Schedule | every 1 hour, reading the last 2 hours |
+| Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine); FileHash (HashAlgorithm, ToolSHA256) |
 
-**What it finds.** A process command line matches a well known way of stealing credentials from a Windows device: dumping the memory of lsass.exe with ProcDump or comsvcs.dll, running Mimikatz style commands, or saving the SAM, SECURITY and SYSTEM registry hives. Credentials taken this way are what an intruder uses to move to the next machine.
+**What it finds.** A process command line matches a well known way of stealing credentials from a Windows device: dumping the memory of lsass.exe with ProcDump (also when renamed) or comsvcs.dll, running Mimikatz style commands, or saving the SAM, SECURITY and SYSTEM registry hives. Credentials taken this way are what an intruder uses to move to the next machine. The file hash is attached only when the tool is not part of Windows, so nobody is tempted to block reg.exe or rundll32.exe.
 
 **False positives.** Rare. A support engineer capturing an LSASS dump for Microsoft support, a red team exercise, or backup software that saves registry hives.
 
@@ -265,7 +265,7 @@ Source: [EP-002-backup-and-recovery-deleted.kql](endpoint-threats/EP-002-backup-
 | Severity | High |
 | MITRE ATT&CK | Impact; techniques: T1490 |
 | Tables | `DeviceProcessEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine) |
 
 **What it finds.** A command deleted Volume Shadow Copies, shrank their storage, deleted Windows Backup catalogs or turned off Windows recovery. Ransomware does this immediately before it encrypts, so that the files cannot be restored locally.
@@ -288,8 +288,8 @@ Source: [EP-003-office-application-started-script-interpreter.kql](endpoint-thre
 | Severity | High |
 | MITRE ATT&CK | Execution, InitialAccess; techniques: T1059, T1204, T1566, T1204.002, T1566.001 |
 | Tables | `DeviceProcessEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
-| Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine); FileHash (HashAlgorithm, SHA256) |
+| Schedule | every 1 hour, reading the last 2 hours |
+| Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine) |
 
 **What it finds.** Word, Excel, PowerPoint, Outlook or another Office program started PowerShell, a script host or a Windows tool that can download and run code. A document does not need to do that; a malicious attachment or macro does.
 
@@ -311,12 +311,12 @@ Source: [EP-004-encoded-or-download-powershell.kql](endpoint-threats/EP-004-enco
 | Severity | Medium |
 | MITRE ATT&CK | Execution, DefenseEvasion, CommandAndControl; techniques: T1059, T1027, T1105, T1059.001 |
 | Tables | `DeviceProcessEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine) |
 
 **What it finds.** PowerShell ran with a long Base64 encoded command, or downloaded content and ran it straight from memory or in a hidden window. Both keep the real script off disk and out of sight, which is why loaders and hands-on intruders use them.
 
-**False positives.** Management agents run encoded PowerShell all day. The common ones (Configuration Manager, Intune, Defender, Azure guest agents) are excluded by parent process; yours may differ.
+**False positives.** Management agents run encoded PowerShell all day. The common ones (Configuration Manager, Intune, Defender, Azure guest agents) are excluded when the parent process has one of their names and runs from a system or program folder; yours may differ.
 
 **Tuning.** Add your management tool's parent process to ManagementParents. Review the alerts for a week before raising the severity.
 
@@ -341,9 +341,9 @@ Source: [EM-001-user-clicked-malicious-url.kql](email-phishing/EM-001-user-click
 | Schedule | every 1 hour, reading the last 7 days |
 | Entities | Account (AccountUpn); URL (Url); IP (IPAddress); MailMessage (NetworkMessageId, SenderFromAddress) |
 
-**What it finds.** Safe Links recorded a click on a URL it classes as phishing or malware, and the user reached the page: the click was allowed, or the user chose to continue past the warning. The alert adds the message the link arrived in when it was received in the last seven days.
+**What it finds.** Safe Links recorded a click on a URL it classes as phishing or malware, and the user reached the page: the click was allowed, or the user chose to continue past the warning. The alert adds the sender and subject of the message the link arrived in, when that message was received in the last seven days.
 
-**False positives.** A URL that was clean when clicked and classified later still means the user saw the page. Security staff opening a reported link from a production mailbox.
+**False positives.** Security staff opening a reported link from a production mailbox, and a verdict that Microsoft later reverses.
 
 **Tuning.** Turn off "Let users click through to the original URL" in the Safe Links policy to remove the click-through case entirely.
 
@@ -361,7 +361,7 @@ Source: [EM-002-phishing-delivered-to-multiple-recipients.kql](email-phishing/EM
 | Severity | Medium |
 | MITRE ATT&CK | InitialAccess; techniques: T1566, T1566.001, T1566.002 |
 | Tables | `EmailEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | MailMessage (NetworkMessageId, SenderFromAddress, SenderIPv4) |
 
 **What it finds.** Inbound mail that Defender for Office 365 identified as phishing or malware was still delivered to mailboxes, and one sender reached several recipients within the hour. Delivery despite a verdict usually means an allow rule, a safe sender entry or a policy override let it in.
@@ -376,7 +376,7 @@ Source: [EM-002-phishing-delivered-to-multiple-recipients.kql](email-phishing/EM
 
 ### EM-003
 
-**Inbox rule that forwards, deletes or hides mail**  
+**Inbox rule or mailbox setting that forwards, deletes or hides mail**  
 Source: [EM-003-inbox-rule-forwards-or-hides-mail.kql](email-phishing/EM-003-inbox-rule-forwards-or-hides-mail.kql)
 
 | | |
@@ -384,10 +384,10 @@ Source: [EM-003-inbox-rule-forwards-or-hides-mail.kql](email-phishing/EM-003-inb
 | Severity | Medium |
 | MITRE ATT&CK | Collection, DefenseEvasion; techniques: T1114, T1564, T1114.003, T1564.008 |
 | Tables | `CloudAppEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 4 hours |
 | Entities | Account (UserUpn, AccountObjectId); IP (IPAddress) |
 
-**What it finds.** A mailbox rule was created or changed so that it forwards or redirects mail to another address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or Conversation History. After taking over a mailbox, an attacker sets a rule like this to read the victim's mail and to hide the replies to the fraudulent messages they send.
+**What it finds.** A mailbox rule was created or changed so that it forwards or redirects mail to another address, deletes matching mail, or moves it to a folder nobody reads such as RSS Feeds or Conversation History; or forwarding was switched on for the whole mailbox. After taking over a mailbox, an attacker does this to read the victim's mail and to hide the replies to the fraudulent messages they send. Rules made in Outlook on the web or PowerShell (New-InboxRule, Set-InboxRule, Set-Mailbox) and rules made in the Outlook desktop client (UpdateInboxRules) are both read. The rule reads four hours because this audit data can arrive more than an hour late.
 
 **False positives.** Users who forward to a personal or shared mailbox, and rules that file newsletters into Archive or delete notifications.
 
@@ -434,7 +434,7 @@ Source: [AZ-001-diagnostic-settings-deleted.kql](azure-activity/AZ-001-diagnosti
 | Severity | Medium |
 | MITRE ATT&CK | DefenseEvasion; techniques: T1562, T1562.008 |
 | Tables | `AzureActivity` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Caller); IP (CallerIpAddress); AzureResource (ResourceId) |
 
 **What it finds.** A diagnostic setting was deleted from an Azure resource. Diagnostic settings are what send a resource's logs to the workspace, so removing one stops the evidence for that resource (a key vault, a storage account, a firewall) from being collected.
@@ -457,7 +457,7 @@ Source: [AZ-002-privileged-azure-role-assigned.kql](azure-activity/AZ-002-privil
 | Severity | High |
 | MITRE ATT&CK | Persistence, PrivilegeEscalation; techniques: T1098, T1098.003 |
 | Tables | `AzureActivity` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 3 hours |
 | Entities | Account (Caller); IP (CallerIpAddress); AzureResource (Scope) |
 
 **What it finds.** Someone assigned Owner, User Access Administrator, Role Based Access Control Administrator or Contributor on an Azure scope. The first three can grant any other role, so a new assignment is both an escalation and a way back in after the original account is cleaned up.
@@ -480,10 +480,10 @@ Source: [AZ-003-mass-resource-deletion.kql](azure-activity/AZ-003-mass-resource-
 | Severity | High |
 | MITRE ATT&CK | Impact; techniques: T1485 |
 | Tables | `AzureActivity` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Caller); IP (CallerIpAddress) |
 
-**What it finds.** One caller deleted an unusually large number of Azure resources in an hour. A compromised administrator or a leaked service principal secret can destroy an environment this way, and it is also what an expensive mistake in a script looks like while it is still running.
+**What it finds.** One caller deleted an unusually large number of Azure resources in an hour, counted across all subscriptions and addresses the caller used. A compromised administrator or a leaked service principal secret can destroy an environment this way, and it is also what an expensive mistake in a script looks like while it is still running.
 
 **False positives.** Tearing down a test environment, a pipeline that recreates resources, and clean-up after a project ends.
 
@@ -501,12 +501,12 @@ Source: [AZ-004-run-command-on-virtual-machine.kql](azure-activity/AZ-004-run-co
 | | |
 |---|---|
 | Severity | Medium |
-| MITRE ATT&CK | Execution; techniques: T1059 |
+| MITRE ATT&CK | Execution; techniques: T1651 |
 | Tables | `AzureActivity` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Account (Caller); IP (CallerIpAddress); AzureResource (ResourceId) |
 
-**What it finds.** Someone used the Azure Run Command feature to execute a script inside a virtual machine or Arc-enabled server. The script runs as SYSTEM or root and needs no network path or credentials for the machine, only an Azure role, which makes it a favourite way to move from a compromised cloud identity onto servers (MITRE ATT&CK T1651, Cloud Administration Command).
+**What it finds.** Someone used the Azure Run Command feature to execute a script inside a virtual machine or Arc-enabled server. The script runs as SYSTEM or root and needs no network path or credentials for the machine, only an Azure role, which makes it a favourite way to move from a compromised cloud identity onto servers.
 
 **False positives.** Operations teams and automation that use Run Command for maintenance.
 
@@ -530,14 +530,14 @@ Source: [EX-001-large-outbound-transfer.kql](insider-risk-exfiltration/EX-001-la
 | Severity | Medium |
 | MITRE ATT&CK | Exfiltration; techniques: T1048 |
 | Tables | `CommonSecurityLog` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | IP (SourceIP); IP (DestinationIP); Account (SourceUser) |
 
-**What it finds.** According to the firewall, one internal address sent more than a gigabyte to a single internet address within an hour. Most traffic downloads more than it uploads, so a large upload to one place is worth a look whether it is a backup, a sync client or someone taking data out.
+**What it finds.** According to the firewall, one internal address sent more than a gigabyte to a single internet address within an hour. Most traffic downloads more than it uploads, so a large upload to one place is worth a look whether it is a backup, a sync client or someone taking data out. Only IPv4 is evaluated.
 
-**False positives.** Cloud backup, file sync, video conferencing, software distribution and replication to a partner or another site over the internet.
+**False positives.** Cloud backup, file sync, video conferencing, software distribution and replication to a partner or another site over the internet. A firewall that also logs running totals for sessions still in progress makes the figure too high, because the same bytes are added twice.
 
-**Tuning.** Add the destinations you expect (backup provider, your other sites) to AllowedDestinations and servers that upload by design to AllowedSources. Change MinBytes to suit your links.
+**Tuning.** Add the destinations you expect (backup provider, your other sites) to AllowedDestinations and servers that upload by design to AllowedSources. Change MinBytes to suit your links. If your firewall writes interim session records, add a filter that keeps only its end-of-session records.
 
 **Response.** Identify the device and user behind the source address and the owner of the destination. If the destination is a file sharing or personal storage service, ask the user what was sent.
 
@@ -553,14 +553,14 @@ Source: [EX-002-mass-copy-to-removable-media.kql](insider-risk-exfiltration/EX-0
 | Severity | Medium |
 | MITRE ATT&CK | Exfiltration; techniques: T1052, T1052.001 |
 | Tables | `DeviceEvents`, `DeviceFileEvents` |
-| Schedule | every 1 hour, reading the last 1 day |
+| Schedule | every 1 hour, reading the last 7 days |
 | Entities | Host (DeviceName); Account (AccountName, AccountDomain) |
 
-**What it finds.** A user created a large number of files on a USB drive within an hour. The rule pairs the drive letter Defender for Endpoint recorded when the drive was mounted with the files created on that letter afterwards, so internal drives and network shares are not counted.
+**What it finds.** A user created a large number of files on a USB drive within an hour. The rule pairs each new file with the USB drive that was most recently mounted on that drive letter, so internal drives and network shares are not counted and the alert names the right drive when a letter has been used by more than one.
 
 **False positives.** IT staff building installation media, photographers and engineers who work from external drives, and backups to a USB disk.
 
-**Tuning.** Change MinFiles. Add file extensions you do not care about to IgnoredExtensions. If USB storage is not allowed at all, block it with device control and treat any hit as a policy breach.
+**Tuning.** Change MinFiles. Add file extensions you do not care about to IgnoredExtensions. A drive that has stayed plugged in for more than seven days is not matched. If USB storage is not allowed at all, block it with device control and treat any hit as a policy breach.
 
 **Response.** Review the file names and the user's role. If the data is sensitive, speak to the user's manager and HR before the user, and keep the serial number of the drive for the record.
 
@@ -579,7 +579,7 @@ Source: [EX-003-mass-download-from-sharepoint-or-onedrive.kql](insider-risk-exfi
 | Schedule | every 1 hour, reading the last 14 days |
 | Entities | Account (UserUpn, AccountObjectId); IP (IPAddress) |
 
-**What it finds.** An account downloaded far more files from SharePoint or OneDrive in one hour than in any hour of the previous two weeks, and more than a fixed minimum. It is how a departing employee takes a team site with them and how an attacker with a stolen session collects what the account can reach.
+**What it finds.** An account downloaded far more files from SharePoint or OneDrive than in any hour of the previous two weeks, and more than a fixed minimum. It is how a departing employee takes a team site with them and how an attacker with a stolen session collects what the account can reach. Downloads with no signed-in account (anonymous links) are not evaluated.
 
 **False positives.** A new laptop syncing a library for the first time, a migration or backup tool running as a user, and someone downloading a large project folder for legitimate work.
 
@@ -599,7 +599,7 @@ Source: [EX-004-file-transfer-tool-executed.kql](insider-risk-exfiltration/EX-00
 | Severity | Medium |
 | MITRE ATT&CK | Exfiltration; techniques: T1567, T1048, T1567.002 |
 | Tables | `DeviceProcessEvents` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | Host (DeviceName); Account (AccountName, AccountDomain); Process (ProcessCommandLine); FileHash (HashAlgorithm, SHA256) |
 
 **What it finds.** A tool built to copy data to cloud storage or to another host ran on a device: Rclone, the MEGA clients, WinSCP, PSCP or similar. Ransomware crews use exactly these to take data before encrypting, and Rclone is often renamed, so the rule also recognises it by its original file name and by its command line options.
@@ -624,12 +624,12 @@ Source: [SO-001-log-source-stopped-sending-data.kql](soc-operations/SO-001-log-s
 | | |
 |---|---|
 | Severity | Medium |
-| MITRE ATT&CK | DefenseEvasion; techniques: T1562, T1562.008 |
+| MITRE ATT&CK | Operational rule, no tactic; techniques: none |
 | Tables | `Usage` |
 | Schedule | every 6 hours, reading the last 7 days |
 | Entities | none |
 
-**What it finds.** A table that the detection rules depend on received data on most of the last seven days and has received nothing for several hours. Every rule that reads the table is blind until it is fixed, and nothing else will tell you, because a rule with no data raises no alerts.
+**What it finds.** A table that the detection rules depend on received data on most of the last seven days and has received nothing for several hours. Every rule that reads the table is blind until it is fixed, and nothing else will tell you, because a rule with no data raises no alerts. It is an operational rule and has no MITRE ATT&CK mapping, although an attacker who switches off logging causes the same alert.
 
 **False positives.** A source that is quiet out of hours (email on a public holiday), a planned connector change, or a table you list in WatchedTables but only use occasionally.
 
@@ -647,9 +647,9 @@ Source: [SO-002-analytics-rule-failing.kql](soc-operations/SO-002-analytics-rule
 | | |
 |---|---|
 | Severity | Medium |
-| MITRE ATT&CK | DefenseEvasion; techniques: T1562 |
+| MITRE ATT&CK | Operational rule, no tactic; techniques: none |
 | Tables | `SentinelHealth` |
-| Schedule | every 1 hour, reading the last 1 hour |
+| Schedule | every 1 hour, reading the last 2 hours |
 | Entities | none |
 
 **What it finds.** A scheduled or near-real-time analytics rule failed more than once in the last hour. A rule that cannot run detects nothing, and Sentinel disables a rule automatically after repeated failures. Requires the health monitoring setting, which creates the SentinelHealth table.
@@ -679,7 +679,7 @@ Source: [SO-003-high-severity-incident-not-picked-up.kql](soc-operations/SO-003-
 
 **False positives.** None in the usual sense. If it fires often, the queue is under-staffed or the agent is not running.
 
-**Tuning.** The window is 30 to 60 minutes after creation so each incident is reported once; change both numbers and the Frequency together.
+**Tuning.** The window is 30 to 60 minutes after creation so each incident is reported once; change both numbers and the Frequency together. An incident whose severity is raised to High more than an hour after it was created falls outside the window and is not reported.
 
 **Response.** Assign the incident now. Then find out why it was missed: check that the agent's automation rule and playbook ran, and who was on call.
 

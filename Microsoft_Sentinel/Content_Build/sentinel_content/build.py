@@ -6,8 +6,16 @@ import json
 from pathlib import Path
 
 from . import arm, kql
-from .rules import AREAS, CONTENT_ROOT, RULES_DIR, Rule, check_rules, duration_seconds, load_rules
-from .workbooks import WORKBOOKS_DIR, Workbook, check_workbooks, gallery_text, load_workbooks, workbook_queries
+from .rules import AREAS, CONTENT_ROOT, RULES_DIR, Rule, check_rules, duration_seconds, load_rules, stray_rule_files
+from .workbooks import (
+    WORKBOOKS_DIR,
+    Workbook,
+    all_tabs,
+    check_workbooks,
+    gallery_text,
+    is_generated_workbook,
+    load_workbooks,
+)
 
 ALL_RULES = "all-rules.json"
 ALL_WORKBOOKS = "all-workbooks.json"
@@ -21,7 +29,7 @@ def load_all() -> tuple[list[Rule], list[Workbook], dict[str, dict[str, str]]]:
 
 def problems(rules: list[Rule], books: list[Workbook], schema: dict[str, dict[str, str]]) -> list[str]:
     """Everything wrong with the sources. Nothing is generated while this list is not empty."""
-    found = check_rules(rules, schema) + check_workbooks(books, rules, schema)
+    found = check_rules(rules, schema) + stray_rule_files() + check_workbooks(books, rules, schema)
     if not rules:
         found.append("no rule files found under Detection-rules/")
     if not books:
@@ -135,7 +143,7 @@ def write_files(files: dict[Path, str], root: Path) -> list[Path]:
 
 
 def stale_files(files: dict[Path, str], root: Path) -> list[str]:
-    """Generated files that are missing or differ from what the sources produce now."""
+    """Generated files that are missing, differ from the sources, or no longer have a source."""
     stale = []
     for relative, text in files.items():
         target = root / relative
@@ -143,17 +151,25 @@ def stale_files(files: dict[Path, str], root: Path) -> list[str]:
             stale.append(f"{relative.as_posix()} is missing")
         elif target.read_text(encoding="utf-8") != text:
             stale.append(f"{relative.as_posix()} is out of date")
-    deploy = root / RULES_DIR.relative_to(CONTENT_ROOT) / "deploy"
-    expected = {relative.name for relative in files if relative.parent.name == "deploy"}
-    if deploy.is_dir():
-        for path in sorted(deploy.glob("*.json")):
-            if path.name not in expected:
-                stale.append(f"{path.relative_to(root).as_posix()} has no rules behind it; delete it")
+    expected = {relative.as_posix() for relative in files}
+    rules_dir = RULES_DIR.relative_to(CONTENT_ROOT)
+    books_dir = WORKBOOKS_DIR.relative_to(CONTENT_ROOT)
+    for folder in (rules_dir / "deploy", books_dir / "deploy"):
+        for path in sorted((root / folder).glob("*.json")):
+            if (folder / path.name).as_posix() not in expected:
+                stale.append(f"{(folder / path.name).as_posix()} has no source behind it; delete it")
+    for path in sorted((root / books_dir).glob("*.json")):
+        if (books_dir / path.name).as_posix() not in expected and is_generated_workbook(path):
+            stale.append(f"{(books_dir / path.name).as_posix()} was generated from a workbook source that no longer exists; delete it")
     return stale
 
 
 def query_export(rules: list[Rule], books: list[Workbook]) -> str:
-    """Every query with the columns its result must contain, for the semantic check in kql-check."""
+    """Every query with what its result must contain, for the semantic check in kql-check.
+
+    columns: must be in the result. exact: must be in the result and must not be part of another
+    column's name (workbook formatting matches columns by name). numeric: must hold numbers.
+    """
     queries = []
     for rule in rules:
         queries.append(
@@ -163,33 +179,28 @@ def query_export(rules: list[Rule], books: list[Workbook]) -> str:
                 "query": kql.strip_comments(rule.query),
                 "columns": rule.output_columns,
                 "exact": [],
+                "numeric": [],
             }
         )
     for book in books:
-        for tab_and_title, query in workbook_queries(book, rules):
-            item = _item_for(book, rules, tab_and_title)
-            settings = item.settings
-            columns = [settings.get(key) for key in ("label", "value", "note", "severity", "link")]
-            exact = [*settings.get("bars", ()), *settings.get("heat", ()), *settings.get("hide", ())]
-            queries.append(
-                {
-                    "id": f"{book.file}: {tab_and_title}",
-                    "source": f"Workbooks/src/{book.path.name}",
-                    "query": kql.fill_placeholders(kql.strip_comments(query)),
-                    "columns": [column for column in (*columns, *exact) if column],
-                    # Workbook formatters match a column by name; a second column that contains the
-                    # name could pick up the same formatting, so these must not be substrings.
-                    "exact": [column for column in (*columns, *exact) if column],
-                }
-            )
+        for tab in all_tabs(book, rules):
+            for index, item in enumerate(tab.items, start=1):
+                if item.kind == "text":
+                    continue
+                settings = item.settings
+                named = [settings.get(key) for key in ("label", "value", "note", "severity", "link")]
+                numeric = [*settings.get("bars", ()), *settings.get("heat", ())]
+                if item.kind == "tiles":
+                    numeric.append(settings.get("value"))
+                formatted = [column for column in (*named, *numeric, *settings.get("hide", ())) if column]
+                queries.append(
+                    {
+                        "id": f"{book.file}: {tab.name} / {index}. {settings.get('title', item.kind)}",
+                        "source": f"Workbooks/src/{book.path.name}",
+                        "query": kql.fill_placeholders(kql.strip_comments(item.query)),
+                        "columns": list(dict.fromkeys(formatted)),
+                        "exact": list(dict.fromkeys(formatted)),
+                        "numeric": [column for column in dict.fromkeys(numeric) if column],
+                    }
+                )
     return json.dumps(queries, indent=1, ensure_ascii=False) + "\n"
-
-
-def _item_for(book: Workbook, rules: list[Rule], label: str):
-    from .workbooks import all_tabs
-
-    for tab in all_tabs(book, rules):
-        for index, item in enumerate(tab.items, start=1):
-            if item.kind != "text" and f"{tab.name} / {index}. {item.settings.get('title', item.kind)}" == label:
-                return item
-    raise KeyError(label)

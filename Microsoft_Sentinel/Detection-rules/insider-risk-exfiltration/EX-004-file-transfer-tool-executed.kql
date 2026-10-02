@@ -6,7 +6,7 @@
 // Sub-techniques: T1567.002
 // Tables: DeviceProcessEvents
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine); FileHash(Algorithm=HashAlgorithm, Value=SHA256)
 // Custom details: Tool, Reason, Executions
 // Description: A tool built to copy data to cloud storage or to another host ran on a device: Rclone,
@@ -24,7 +24,9 @@ let TransferTools = dynamic(["rclone.exe", "megasync.exe", "megacmd.exe", "megac
                              "winscp.exe", "winscp.com", "pscp.exe", "psftp.exe", "filezilla.exe", "restic.exe",
                              "azcopy.exe", "gsutil.exe"]);
 DeviceProcessEvents
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | extend Reason = case(
     tolower(FileName) in (TransferTools), "Known transfer tool by file name",
     tolower(ProcessVersionInfoOriginalFileName) in (TransferTools), "Known transfer tool running under another name",

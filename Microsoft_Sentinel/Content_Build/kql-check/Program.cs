@@ -63,7 +63,8 @@ internal static class Program
                 string query = entry.GetProperty("query").GetString() ?? "";
                 var required = Strings(entry, "columns");
                 var exact = Strings(entry, "exact");
-                CheckQuery(globals, id, source, query, required, exact, failures, warnings);
+                var numeric = Strings(entry, "numeric");
+                CheckQuery(globals, id, source, query, required, exact, numeric, failures, warnings);
             }
         }
         catch (Exception error)
@@ -72,9 +73,15 @@ internal static class Program
             return 2;
         }
 
+        if (queryCount == 0)
+        {
+            Fail("kql-check found nothing to check", "the queries file is empty");
+            return 2;
+        }
+
         string version = typeof(KustoCode).Assembly.GetName().Version?.ToString() ?? "unknown";
         string summary = $"{queryCount} queries analysed against {tableCount} tables with Kusto.Language {version}: " +
-                         $"{failures.Count} problem(s), {warnings.Count} warning(s). Self-test: 8 deliberately broken " +
+                         $"{failures.Count} problem(s), {warnings.Count} warning(s). Self-test: 9 deliberately broken " +
                          "queries rejected, 1 correct query accepted.";
         Console.WriteLine(summary);
 
@@ -144,10 +151,11 @@ internal static class Program
             ("SigninLogs | where IPAddress ==", "a query that is not complete"),
             ("SigninLogs | extend Value = strcat_array(IPAddress)", "a function called with too few arguments"),
         };
+        var none = new List<string>();
         foreach (var (query, why) in broken)
         {
             var failures = new List<string>();
-            CheckQuery(globals, "self-test", "self-test", query, new List<string>(), new List<string>(), failures, new List<string>());
+            CheckQuery(globals, "self-test", "self-test", query, none, none, none, failures, new List<string>());
             if (failures.Count == 0)
             {
                 return $"a query with {why} was accepted: {query}";
@@ -156,7 +164,7 @@ internal static class Program
 
         var missing = new List<string>();
         CheckQuery(globals, "self-test", "self-test", "SigninLogs | project IPAddress",
-            new List<string> { "UserPrincipalName" }, new List<string>(), missing, new List<string>());
+            new List<string> { "UserPrincipalName" }, none, none, missing, new List<string>());
         if (missing.Count != 1)
         {
             return "a result without a required column was accepted";
@@ -164,16 +172,25 @@ internal static class Program
 
         var clash = new List<string>();
         CheckQuery(globals, "self-test", "self-test", "SigninLogs | project Risk = RiskLevelDuringSignIn, RiskState",
-            new List<string>(), new List<string> { "Risk" }, clash, new List<string>());
+            none, new List<string> { "Risk" }, none, clash, new List<string>());
         if (clash.Count != 1)
         {
             return "a formatted column whose name is part of another column name was accepted";
         }
 
+        var text = new List<string>();
+        CheckQuery(globals, "self-test", "self-test", "SigninLogs | summarize Total = count() by IPAddress",
+            none, none, new List<string> { "IPAddress" }, text, new List<string>());
+        if (text.Count != 1)
+        {
+            return "a text column formatted as a number was accepted";
+        }
+
         var clean = new List<string>();
         CheckQuery(globals, "self-test", "self-test",
             "SigninLogs | where ResultType == '0' | summarize SignIns = count() by IPAddress | top 5 by SignIns desc",
-            new List<string> { "IPAddress", "SignIns" }, new List<string> { "SignIns" }, clean, new List<string>());
+            new List<string> { "IPAddress", "SignIns" }, new List<string> { "SignIns" },
+            new List<string> { "SignIns" }, clean, new List<string>());
         if (clean.Count != 0)
         {
             return "a correct query was rejected: " + string.Join("; ", clean);
@@ -182,7 +199,7 @@ internal static class Program
     }
 
     private static void CheckQuery(GlobalState globals, string id, string source, string query,
-        List<string> required, List<string> exact, List<string> failures, List<string> warnings)
+        List<string> required, List<string> exact, List<string> numeric, List<string> failures, List<string> warnings)
     {
         KustoCode code = KustoCode.ParseAndAnalyze(query, globals);
         bool hasError = false;
@@ -231,6 +248,15 @@ internal static class Program
                 failures.Add($"[{id}] ({source}) the result has no column '{column}'. It has: {string.Join(", ", names)}");
             }
         }
+        foreach (string column in numeric)
+        {
+            ColumnSymbol found = result.Columns.FirstOrDefault(candidate => candidate.Name == column);
+            if (found != null && !IsNumber(found.Type))
+            {
+                failures.Add($"[{id}] ({source}) column '{column}' is shown as a number, bar or shading but its type is " +
+                             $"{found.Type.Name}");
+            }
+        }
         foreach (string column in exact)
         {
             foreach (string other in names)
@@ -244,18 +270,21 @@ internal static class Program
         }
     }
 
+    private static bool IsNumber(TypeSymbol type)
+    {
+        return type == ScalarTypes.Long || type == ScalarTypes.Int || type == ScalarTypes.Real || type == ScalarTypes.Decimal;
+    }
+
+    // A missing list is an error, not "nothing to check": the export and this tool must agree.
     private static List<string> Strings(JsonElement entry, string property)
     {
         var values = new List<string>();
-        if (entry.TryGetProperty(property, out JsonElement array) && array.ValueKind == JsonValueKind.Array)
+        foreach (var item in entry.GetProperty(property).EnumerateArray())
         {
-            foreach (var item in array.EnumerateArray())
+            string value = item.GetString();
+            if (!string.IsNullOrEmpty(value))
             {
-                string value = item.GetString();
-                if (!string.IsNullOrEmpty(value))
-                {
-                    values.Add(value);
-                }
+                values.Add(value);
             }
         }
         return values;

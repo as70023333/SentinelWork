@@ -135,7 +135,7 @@ UrlClickEvents
 | summarize Clicks = count(),
             Malicious = countif(isnotempty(ThreatTypes)),
             Reached = countif(isnotempty(ThreatTypes) and (ActionType == "ClickAllowed" or IsClickedThrough == true)),
-            Stopped = countif(ActionType == "ClickBlocked" and coalesce(IsClickedThrough, false) == false),
+            Stopped = countif(ActionType startswith "ClickBlocked" and coalesce(IsClickedThrough, false) == false),
             Users = dcountif(AccountUpn, isnotempty(ThreatTypes))
 | project Tiles = pack_array(
     bag_pack("Metric", "Clicks", "Value", Clicks),
@@ -167,7 +167,7 @@ UrlClickEvents
           Url,
           Threat = ThreatTypes,
           Action = ActionType,
-          ReachedPage = ActionType == "ClickAllowed" or IsClickedThrough == true,
+          ReachedPage = ActionType == "ClickAllowed" or coalesce(IsClickedThrough, false),
           Workload,
           Address = IPAddress,
           NetworkMessageId

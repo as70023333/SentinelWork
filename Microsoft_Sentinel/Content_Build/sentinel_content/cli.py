@@ -71,6 +71,10 @@ def run(argv: list[str] | None = None) -> int:
             print("--out needs a folder name", file=sys.stderr)
             return EXIT_ERROR
         root = Path(args.out) if args.out else CONTENT_ROOT
+        if args.enabled and root.resolve() == CONTENT_ROOT.resolve():
+            print("--out must be a different folder: the templates in the repository keep their rules disabled",
+                  file=sys.stderr)  # fmt: skip
+            return EXIT_ERROR
         changed = build.write_files(build.generated_files(rules, books, enabled=args.enabled), root)
         for relative in changed:
             print(f"wrote {relative.as_posix()}")
@@ -99,4 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_OK
     except (RuleError, WorkbookError, KqlError, ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except Exception as error:  # a bug in this tool: still exit 2, never 1 ("problems found")
+        print(f"error: unexpected {type(error).__name__}: {error}", file=sys.stderr)
         return EXIT_ERROR

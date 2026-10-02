@@ -6,7 +6,7 @@
 // Sub-techniques: T1566.001, T1566.002
 // Tables: EmailEvents
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: MailMessage(NetworkMessageId=NetworkMessageId, Sender=SenderFromAddress, SenderIP=SenderIPv4)
 // Custom details: Recipients, Messages, ThreatTypes, SenderDomain
 // Description: Inbound mail that Defender for Office 365 identified as phishing or malware was still
@@ -22,7 +22,9 @@
 let MinRecipients = 3;
 let AllowedSenderDomains = dynamic([]);
 EmailEvents
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where EmailDirection == "Inbound" and DeliveryAction == "Delivered"
 | where ThreatTypes has_any ("Phish", "Malware")
 | where SenderFromDomain !in~ (AllowedSenderDomains)

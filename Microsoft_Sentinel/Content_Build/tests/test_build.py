@@ -34,7 +34,7 @@ class GeneratedFileTests(unittest.TestCase):
             self.assertIn(f"Detection-rules/deploy/{area}.json", names)
         for book in BOOKS:
             self.assertIn(f"Workbooks/{book.file}.json", names)
-        self.assertEqual(len(names), 1 + 7 + 1 + 7 + 1)
+        self.assertEqual(len(names), 1 + len(rules.AREAS) + 1 + len(BOOKS) + 1)
 
     def test_write_then_compare_in_a_scratch_folder(self):
         files = build.generated_files(RULES, BOOKS)
@@ -45,12 +45,19 @@ class GeneratedFileTests(unittest.TestCase):
             self.assertEqual(build.write_files(files, root), [])
             self.assertEqual(build.stale_files(files, root), [])
             target = root / "Workbooks" / f"{BOOKS[0].file}.json"
-            target.write_text(target.read_text(encoding="utf-8") + " ", encoding="utf-8")
+            generated = target.read_text(encoding="utf-8")
+            target.write_text(generated + " ", encoding="utf-8")
             (root / "Detection-rules" / "deploy" / "old-area.json").write_text("{}", encoding="utf-8")
+            (root / "Workbooks" / "deploy" / "old.json").write_text("{}", encoding="utf-8")
+            # A workbook whose source was renamed or deleted, and a hand-made one that must be left alone.
+            (root / "Workbooks" / "RenamedAway.json").write_text(generated, encoding="utf-8")
+            (root / "Workbooks" / "HandMade.json").write_text('{"version": "Notebook/1.0", "items": []}', encoding="utf-8")
             stale = build.stale_files(files, root)
-            self.assertEqual(len(stale), 2)
+            self.assertEqual(len(stale), 4, stale)
             self.assertTrue(any("out of date" in line for line in stale))
-            self.assertTrue(any("old-area.json has no rules behind it" in line for line in stale))
+            self.assertTrue(any("Detection-rules/deploy/old-area.json has no source" in line for line in stale))
+            self.assertTrue(any("Workbooks/deploy/old.json has no source" in line for line in stale))
+            self.assertTrue(any("Workbooks/RenamedAway.json was generated" in line for line in stale))
 
     def test_generated_text_uses_unix_line_endings_and_ends_with_a_newline(self):
         for path, text in build.generated_files(RULES, BOOKS).items():
@@ -64,7 +71,7 @@ class RuleTemplateTests(unittest.TestCase):
         template = arm.rules_template(RULES)
         self.assertEqual(template["$schema"], arm.TEMPLATE_SCHEMA)
         self.assertEqual(list(template["parameters"]), ["workspace"])
-        self.assertEqual(len(template["resources"]), 28)
+        self.assertEqual(len(template["resources"]), len(RULES))
         for rule, resource in zip(RULES, template["resources"]):
             self.assertEqual(resource["type"], "Microsoft.OperationalInsights/workspaces/providers/alertRules")
             self.assertEqual(resource["kind"], "Scheduled")
@@ -110,7 +117,7 @@ class WorkbookTemplateTests(unittest.TestCase):
     def test_template_shape(self):
         template = arm.workbooks_template(BOOKS, RULES)
         self.assertEqual(set(template["parameters"]), {"workspace", "location"})
-        self.assertEqual(len(template["resources"]), 7)
+        self.assertEqual(len(template["resources"]), len(BOOKS))
         names = set()
         for book, resource in zip(BOOKS, template["resources"]):
             self.assertEqual(resource["type"], "Microsoft.Insights/workbooks")
@@ -123,7 +130,17 @@ class WorkbookTemplateTests(unittest.TestCase):
             self.assertTrue(properties["serializedData"].startswith("{"))
             self.assertTrue(resource["name"].startswith("[guid(variables('workspaceId'), "))
             names.add(resource["name"])
-        self.assertEqual(len(names), 7)
+        self.assertEqual(len(names), len(BOOKS))
+
+
+class SchemaTests(unittest.TestCase):
+    def test_every_table_in_the_schema_file_is_read_by_something(self):
+        from sentinel_content import kql
+
+        read = set()
+        for query in json.loads(build.query_export(RULES, BOOKS)):
+            read.update(kql.tables_used(kql.tokenize(query["query"]), SCHEMA))
+        self.assertEqual(sorted(read), sorted(SCHEMA))
 
 
 class CatalogueAndExportTests(unittest.TestCase):
@@ -135,7 +152,8 @@ class CatalogueAndExportTests(unittest.TestCase):
             self.assertIn(f"({rule.area}/{rule.path.name})", text)
         for book in BOOKS:
             self.assertIn(f"../Workbooks/{book.file}.json", text)
-        self.assertEqual(text.count("**What it finds.**"), 28)
+        self.assertEqual(text.count("**What it finds.**"), len(RULES))
+        self.assertIn(f"{len(RULES)} scheduled analytics rules", text)
 
     def test_links_in_the_catalogue_point_at_files_that_exist(self):
         import re
@@ -159,19 +177,24 @@ class CatalogueAndExportTests(unittest.TestCase):
         self.assertEqual(len(queries), len(RULES) + workbook_total)
         self.assertEqual(len({query["id"] for query in queries}), len(queries))
         for query in queries:
-            self.assertEqual(set(query), {"id", "source", "query", "columns", "exact"})
+            self.assertEqual(set(query), {"id", "source", "query", "columns", "exact", "numeric"})
+            self.assertLessEqual(set(query["numeric"]), set(query["columns"]))
+            self.assertNotIn("\n\n", query["query"])
             self.assertNotIn("{TimeRange", query["query"])
             self.assertFalse(query["query"].lstrip().startswith("//"))
         first = queries[0]
         self.assertEqual(first["id"], "ID-001")
         self.assertIn("IPAddress", first["columns"])
+        tiles = next(query for query in queries if query["id"].startswith("IdentitySignIns: Overview / 1."))
+        self.assertEqual(tiles["columns"], ["Metric", "Value"])
+        self.assertEqual(tiles["numeric"], ["Value"])
 
 
 class CommandLineTests(unittest.TestCase):
     def test_check_and_list(self):
         code, out, err = run("check")
         self.assertEqual((code, err), (0, ""))
-        self.assertIn("28 rules, 7 workbooks", out)
+        self.assertIn(f"{len(RULES)} rules, {len(BOOKS)} workbooks", out)
         code, out, _ = run("list")
         self.assertEqual(code, 0)
         self.assertIn("ID-001", out)
@@ -193,6 +216,23 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("--enabled needs --out", err)
         code, _, err = run("build", "--out", " ")
         self.assertEqual(code, 2)
+
+    def test_enabled_templates_cannot_be_written_over_the_repository(self):
+        for out in (str(rules.CONTENT_ROOT), str(rules.CONTENT_ROOT / "Workbooks" / "..")):
+            with self.subTest(out=out):
+                code, _, err = run("build", "--enabled", "--out", out)
+                self.assertEqual(code, 2)
+                self.assertIn("--out must be a different folder", err)
+        template = json.loads((rules.RULES_DIR / "deploy" / "all-rules.json").read_text(encoding="utf-8"))
+        self.assertFalse(any(resource["properties"]["enabled"] for resource in template["resources"]))
+
+    def test_a_bug_in_the_tool_is_exit_code_2_not_1(self):
+        from unittest import mock
+
+        with mock.patch.object(build, "load_all", side_effect=AttributeError("boom")):
+            code, _, err = run("check")
+        self.assertEqual(code, 2)
+        self.assertIn("unexpected AttributeError: boom", err)
 
     def test_export_queries(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -6,7 +6,7 @@
 // Sub-techniques: T1562.008
 // Tables: AzureActivity
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: Account(FullName=Caller); IP(Address=CallerIpAddress); AzureResource(ResourceId=ResourceId)
 // Custom details: Deletions, SubscriptionId
 // Description: A diagnostic setting was deleted from an Azure resource. Diagnostic settings are what
@@ -21,10 +21,12 @@
 // References: https://learn.microsoft.com/azure/azure-monitor/essentials/diagnostic-settings
 let AllowedCallers = dynamic([]);
 AzureActivity
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where OperationNameValue =~ "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE"
 | where ActivityStatusValue =~ "Success"
-| where tolower(Caller) !in (AllowedCallers)
+| where Caller !in~ (AllowedCallers)
 | summarize Deletions = dcount(_ResourceId),
             Resources = make_set(_ResourceId, 25),
             FirstSeen = min(TimeGenerated),

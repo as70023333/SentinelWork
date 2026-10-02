@@ -13,7 +13,8 @@
 // False positives: None in the usual sense. If it fires often, the queue is under-staffed or the
 //   agent is not running.
 // Tuning: The window is 30 to 60 minutes after creation so each incident is reported once; change
-//   both numbers and the Frequency together.
+//   both numbers and the Frequency together. An incident whose severity is raised to High more than
+//   an hour after it was created falls outside the window and is not reported.
 // Response: Assign the incident now. Then find out why it was missed: check that the agent's
 //   automation rule and playbook ran, and who was on call.
 // References: https://learn.microsoft.com/azure/sentinel/incident-investigation
@@ -27,4 +28,4 @@ SecurityIncident
 // This rule's own incidents are Medium, so it cannot report itself; the title check makes that explicit.
 | where Title != "High severity incident not picked up within 30 minutes"
 | project CreatedTime, IncidentNumber, IncidentTitle = Title, Severity, Status,
-          MinutesOpen = datetime_diff("minute", now(), CreatedTime), Provider = ProviderName, IncidentUrl
+          MinutesOpen = toint((now() - CreatedTime) / 1m), Provider = ProviderName, IncidentUrl

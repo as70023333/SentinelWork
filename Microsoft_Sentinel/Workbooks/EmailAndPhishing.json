@@ -354,7 +354,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "UrlClickEvents\r\n| summarize Clicks = count(),\r\n            Malicious = countif(isnotempty(ThreatTypes)),\r\n            Reached = countif(isnotempty(ThreatTypes) and (ActionType == \"ClickAllowed\" or IsClickedThrough == true)),\r\n            Stopped = countif(ActionType == \"ClickBlocked\" and coalesce(IsClickedThrough, false) == false),\r\n            Users = dcountif(AccountUpn, isnotempty(ThreatTypes))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Clicks\", \"Value\", Clicks),\r\n    bag_pack(\"Metric\", \"Clicks on malicious URLs\", \"Value\", Malicious),\r\n    bag_pack(\"Metric\", \"Malicious pages reached\", \"Value\", Reached),\r\n    bag_pack(\"Metric\", \"Clicks blocked\", \"Value\", Stopped),\r\n    bag_pack(\"Metric\", \"Users who clicked a malicious URL\", \"Value\", Users))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
+              "query": "UrlClickEvents\r\n| summarize Clicks = count(),\r\n            Malicious = countif(isnotempty(ThreatTypes)),\r\n            Reached = countif(isnotempty(ThreatTypes) and (ActionType == \"ClickAllowed\" or IsClickedThrough == true)),\r\n            Stopped = countif(ActionType startswith \"ClickBlocked\" and coalesce(IsClickedThrough, false) == false),\r\n            Users = dcountif(AccountUpn, isnotempty(ThreatTypes))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Clicks\", \"Value\", Clicks),\r\n    bag_pack(\"Metric\", \"Clicks on malicious URLs\", \"Value\", Malicious),\r\n    bag_pack(\"Metric\", \"Malicious pages reached\", \"Value\", Reached),\r\n    bag_pack(\"Metric\", \"Clicks blocked\", \"Value\", Stopped),\r\n    bag_pack(\"Metric\", \"Users who clicked a malicious URL\", \"Value\", Users))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)",
               "size": 4,
               "title": "Safe Links clicks in the time range",
               "noDataMessage": "No data in the selected time range.",
@@ -419,7 +419,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "UrlClickEvents\r\n| where isnotempty(ThreatTypes)\r\n| project TimeGenerated,\r\n          Account = AccountUpn,\r\n          Url,\r\n          Threat = ThreatTypes,\r\n          Action = ActionType,\r\n          ReachedPage = ActionType == \"ClickAllowed\" or IsClickedThrough == true,\r\n          Workload,\r\n          Address = IPAddress,\r\n          NetworkMessageId\r\n| order by TimeGenerated desc\r\n| take 250",
+              "query": "UrlClickEvents\r\n| where isnotempty(ThreatTypes)\r\n| project TimeGenerated,\r\n          Account = AccountUpn,\r\n          Url,\r\n          Threat = ThreatTypes,\r\n          Action = ActionType,\r\n          ReachedPage = ActionType == \"ClickAllowed\" or coalesce(IsClickedThrough, false),\r\n          Workload,\r\n          Address = IPAddress,\r\n          NetworkMessageId\r\n| order by TimeGenerated desc\r\n| take 250",
               "size": 0,
               "title": "Clicks on malicious URLs",
               "noDataMessage": "No data in the selected time range.",
@@ -565,7 +565,7 @@
           {
             "type": 1,
             "content": {
-              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
             },
             "customWidth": "100",
             "name": "detections-1"
@@ -574,7 +574,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"EM-001\", \"User clicked through to a malicious URL\", \"High\", \"InitialAccess\",\r\n    \"EM-002\", \"Phishing or malware email delivered to several recipients\", \"Medium\", \"InitialAccess\",\r\n    \"EM-003\", \"Inbox rule that forwards, deletes or hides mail\", \"Medium\", \"Collection, DefenseEvasion\",\r\n    \"EM-004\", \"Recipient clicked a link in mail that was later removed as malicious\", \"High\", \"InitialAccess\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"EM-001\", \"User clicked through to a malicious URL\", \"High\", \"InitialAccess\",\r\n    \"EM-002\", \"Phishing or malware email delivered to several recipients\", \"Medium\", \"InitialAccess\",\r\n    \"EM-003\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Medium\", \"Collection, DefenseEvasion\",\r\n    \"EM-004\", \"Recipient clicked a link in mail that was later removed as malicious\", \"High\", \"InitialAccess\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
               "size": 0,
               "title": "Rule coverage",
               "noDataMessage": "No rules are defined for this area.",
@@ -649,7 +649,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
+              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n| summarize Alerts = count() by bin(TimeGenerated, {TimeRange:grain}), AlertName",
               "size": 0,
               "title": "Alerts over time, by rule",
               "noDataMessage": "None of these rules raised an alert in the time range.",
@@ -671,7 +671,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityAlert\r\n| where AlertName in (RuleNames)\r\n| summarize arg_max(TimeGenerated, *) by SystemAlertId\r\n| project TimeGenerated, Rule = AlertName, Severity = AlertSeverity, Status,\r\n          Details = tostring(parse_json(ExtendedProperties)[\"Custom Details\"]), Entities\r\n| order by TimeGenerated desc\r\n| take 250",
               "size": 0,
               "title": "Latest alerts",
               "noDataMessage": "None of these rules raised an alert in the time range.",
@@ -738,7 +738,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"User clicked through to a malicious URL\", \"Phishing or malware email delivered to several recipients\", \"Inbox rule or mailbox setting that forwards, deletes or hides mail\", \"Recipient clicked a link in mail that was later removed as malicious\"]);\r\nlet RuleIds = dynamic([\"fe084df5-e336-5cc2-aa3c-14b2ca5392fa\", \"3283f45d-5e7c-5c14-b082-92d089b69086\", \"4c2d3dd2-de54-5677-a14d-6577a2016a7c\", \"1e3eb5d7-e2e7-5fdf-b100-b5dbab56e901\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents created by these rules",
               "noDataMessage": "No incidents from these rules in the time range.",

@@ -36,7 +36,8 @@ union isfuzzy=true
      | summarize Value = todouble(count())
      | extend Metric = "Files downloaded from SharePoint and OneDrive", Position = 3),
     (CloudAppEvents
-     | where ActionType in~ ("AnonymousLinkCreated", "SharingInvitationCreated", "SecureLinkCreated", "CompanyLinkCreated")
+     | where ActionType in~ ("AnonymousLinkCreated", "SharingInvitationCreated", "SecureLinkCreated", "CompanyLinkCreated",
+                             "AddedToSecureLink")
      | summarize Value = todouble(count())
      | extend Metric = "Sharing links and invitations created", Position = 4)
 | order by Position asc

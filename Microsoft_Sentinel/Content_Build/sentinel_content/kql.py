@@ -6,9 +6,13 @@ file, a column of a table the query reads, or a name the query itself defines. T
 mistakes that are easy to make and impossible to see by eye: a misspelt column, a column from the
 wrong table, a function that does not exist.
 
-It does not track which columns survive each pipeline stage (for example a column used after a
-``summarize`` that dropped it). The semantic check in ``kql-check`` does that with Microsoft's own
-parser; this check exists so the common mistakes are caught without installing anything.
+It is a spelling check, not a grammar check. It does not track which columns survive each
+pipeline stage (a column used after the ``summarize`` that dropped it), and it does not notice a
+misplaced operator. The semantic check in ``kql-check`` does both with Microsoft's own parser;
+this check exists so the common mistakes are caught at once, without installing anything.
+
+Only the KQL the content uses is understood. Obfuscated string literals (``h"..."``), user-defined
+functions and a few rarer operators are reported as unknown; add support when a query needs it.
 """
 
 from __future__ import annotations
@@ -52,8 +56,8 @@ FUNCTIONS = frozenset(
     avg avgif bag_has_key bag_keys bag_pack base64_decode_tostring bin bin_at case ceiling
     coalesce column_ifexists count countif countof datetime_add datetime_diff dayofweek dcount
     dcountif endofday extract extract_all floor format_datetime format_timespan gettype hash
-    hourofday iff iif indexof ingestion_time ipv4_is_in_range ipv4_is_match ipv4_is_private
-    isempty isnotempty isnotnull isnull make_bag make_list make_list_if make_set make_set_if
+    hourofday iff iif indexof ingestion_time ipv4_is_in_any_range ipv4_is_in_range ipv4_is_match
+    ipv4_is_private isempty isnan isnotempty isnotnull isnull make_bag make_list make_list_if make_set make_set_if
     materialize max max_of maxif min min_of minif next not now pack pack_array parse_ipv4
     parse_json parse_path parse_url percentile prev replace_regex replace_string round row_number
     set_difference set_has_element set_intersect set_union split startofday startofmonth
@@ -82,11 +86,17 @@ _TOKEN = re.compile(
 )
 
 # Workbook placeholders that may appear inside a query, and the text used in their place when a
-# query is checked. "{TimeRange:grain}" is the bucket size the workbook picks for the time range.
+# query is checked. "{TimeRange:grain}" is the bucket size the workbook picks for the time range;
+# start and end are the two ends of the range as datetime values.
 PLACEHOLDERS = {
     "{TimeRange:grain}": "1h",
+    "{TimeRange:start}": "datetime(2024-01-01)",
+    "{TimeRange:end}": "datetime(2024-01-08)",
 }
 _PLACEHOLDER = re.compile(r"\{[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z]+)?\}")
+_BRACKETS = {")": "(", "]": "[", "}": "{"}
+_TIMESPAN = re.compile(r"^(\d+(?:\.\d+)?)(d|h|m|s|ms)$")
+_UNIT_SECONDS = {"d": 86400.0, "h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001}
 
 
 class KqlError(ValueError):
@@ -104,9 +114,12 @@ def load_schema(path: Path | None = None) -> dict[str, dict[str, str]]:
     """Return {table: {column: type}} from the schema file."""
     with open(path or SCHEMA_FILE, encoding="utf-8") as handle:
         data = json.load(handle)
-    tables = data.get("tables")
+    tables = data.get("tables") if isinstance(data, dict) else None
     if not isinstance(tables, dict) or not tables:
-        raise ValueError("the schema file has no tables")
+        raise ValueError("the schema file must be an object with a non-empty 'tables' object")
+    for table, columns in tables.items():
+        if not isinstance(columns, dict) or not all(isinstance(kind, str) for kind in columns.values()):
+            raise ValueError(f"the schema file: table {table!r} must map column names to type names")
     return tables
 
 
@@ -122,41 +135,59 @@ def fill_placeholders(query: str) -> str:
     return _PLACEHOLDER.sub(swap, query)
 
 
-def tokenize(query: str) -> list[Token]:
-    """Split a query into tokens, dropping whitespace and comments."""
-    tokens: list[Token] = []
+def _scan(query: str):
+    """Yield (kind, text, line) for every piece of the query, including whitespace and comments."""
     position = 0
     line = 1
     while position < len(query):
         match = _TOKEN.match(query, position)
         if match is None:
             raise KqlError(f"line {line}: unexpected character {query[position]!r}")
-        kind = match.lastgroup or ""
         text = match.group(0)
-        if kind not in ("space", "comment"):
-            tokens.append(Token(kind, text, line))
+        yield match.lastgroup or "", text, line
         line += text.count("\n")
         position = match.end()
-    return tokens
+
+
+def tokenize(query: str) -> list[Token]:
+    """Split a query into tokens, dropping whitespace and comments."""
+    return [Token(kind, text, line) for kind, text, line in _scan(query) if kind not in ("space", "comment")]
 
 
 def strip_comments(query: str) -> str:
-    """Return the query without comment lines and trailing comments, keeping line structure."""
-    out: list[str] = []
-    position = 0
-    while position < len(query):
-        match = _TOKEN.match(query, position)
-        if match is None:
-            raise KqlError(f"unexpected character {query[position]!r}")
-        if match.lastgroup != "comment":
-            out.append(match.group(0))
-        position = match.end()
-    lines = [line.rstrip() for line in "".join(out).split("\n")]
+    """Return the query without comments. A line that held only a comment is removed entirely.
+
+    No empty line is left behind: the Logs editor in the portal treats an empty line as the end of
+    a query, so a query with one cannot be pasted there and run.
+    """
+    lines: list[str] = []
+    current = ""
+    comment_only = False
+    for kind, text, _ in _scan(query):
+        if kind == "comment":
+            comment_only = not current.strip()
+            continue
+        pieces = text.split("\n")
+        for index, piece in enumerate(pieces):
+            if index:
+                if not (comment_only and not current.strip()):
+                    lines.append(current.rstrip())
+                current = ""
+                comment_only = False
+            current += piece
+    if not (comment_only and not current.strip()):
+        lines.append(current.rstrip())
     while lines and not lines[0]:
         lines.pop(0)
     while lines and not lines[-1]:
         lines.pop()
     return "\n".join(lines)
+
+
+def has_placeholder(query: str) -> bool:
+    """True when the query contains a workbook placeholder such as {TimeRange} outside a string."""
+    code = "".join(" " if kind in ("string", "comment") else text for kind, text, _ in _scan(query))
+    return _PLACEHOLDER.search(code) is not None
 
 
 def tables_used(tokens: list[Token], schema: dict[str, dict[str, str]]) -> list[str]:
@@ -183,11 +214,11 @@ def defined_names(tokens: list[Token]) -> set[str]:
     for index, token in enumerate(tokens):
         text = token.text
         if token.kind == "op":
-            if text in "([{":
+            if text in ("(", "[", "{"):
                 depth += 1
-            elif text in ")]}":
+            elif text in (")", "]", "}"):
                 depth -= 1
-            if in_parse and (text in "|;" and depth <= parse_depth or depth < parse_depth):
+            if in_parse and (text in ("|", ";") and depth <= parse_depth or depth < parse_depth):
                 in_parse = after_with = False
             continue
         if token.kind != "name":
@@ -214,26 +245,39 @@ def defined_names(tokens: list[Token]) -> set[str]:
     return names
 
 
-def check_names(query: str, schema: dict[str, dict[str, str]], workbook: bool = False) -> list[str]:
+def _bracket_problem(tokens: list[Token]) -> str | None:
+    """The first bracket that is not matched by one of its own kind, or None."""
+    open_brackets: list[Token] = []
+    for token in tokens:
+        if token.kind != "op":
+            continue
+        if token.text in ("(", "[", "{"):
+            open_brackets.append(token)
+        elif token.text in _BRACKETS:
+            if not open_brackets:
+                return f"line {token.line}: closing {token.text!r} without an opening one"
+            opened = open_brackets.pop()
+            if opened.text != _BRACKETS[token.text]:
+                return f"line {token.line}: {token.text!r} closes the {opened.text!r} opened on line {opened.line}"
+    if open_brackets:
+        return f"line {open_brackets[-1].line}: {open_brackets[-1].text!r} is never closed"
+    return None
+
+
+def check_names(query: str, schema: dict[str, dict[str, str]], workbook: bool = False, first_line: int = 1) -> list[str]:
     """Return a list of problems with the names in a query. An empty list means none were found.
 
     Set workbook=True for a workbook query, which may contain the placeholders in PLACEHOLDERS.
+    first_line is the line of the file the query starts on, so reported lines are file lines.
     """
     try:
         tokens = tokenize(fill_placeholders(query) if workbook else query)
     except KqlError as error:
-        return [str(error)]
+        return [_shift(str(error), first_line)]
     problems: list[str] = []
-    depth = 0
-    for token in tokens:
-        if token.kind == "op" and token.text in "([{":
-            depth += 1
-        elif token.kind == "op" and token.text in ")]}":
-            depth -= 1
-            if depth < 0:
-                return [f"line {token.line}: closing {token.text!r} without an opening one"]
-    if depth != 0:
-        problems.append("brackets are not balanced")
+    brackets = _bracket_problem(tokens)
+    if brackets:
+        return [_shift(brackets, first_line)]
 
     used = tables_used(tokens, schema)
     if not used:
@@ -272,17 +316,15 @@ def check_names(query: str, schema: dict[str, dict[str, str]], workbook: bool = 
         if used:
             hint = f" (tables read: {', '.join(used)})"
         problems.append(f"line {token.line}: unknown name {name}{hint}")
-    return problems
+    return [_shift(problem, first_line) for problem in problems]
 
 
-def has_placeholder(tokens: list[Token]) -> bool:
-    """True when the tokens contain a workbook placeholder such as {TimeRange} outside a string."""
-    for index, token in enumerate(tokens[:-2]):
-        if token.kind == "op" and token.text == "{" and tokens[index + 1].kind == "name":
-            closing = tokens[index + 2].text
-            if closing == "}" or (closing == ":" and index + 4 < len(tokens) and tokens[index + 4].text == "}"):
-                return True
-    return False
+def _shift(problem: str, first_line: int) -> str:
+    """Turn 'line N' counted from the start of the query into the line of the file."""
+    match = re.match(r"line (\d+)", problem)
+    if match is None or first_line == 1:
+        return problem
+    return f"line {int(match.group(1)) + first_line - 1}{problem[match.end():]}"
 
 
 def names_in(query: str, workbook: bool = False) -> set[str]:
@@ -291,11 +333,53 @@ def names_in(query: str, workbook: bool = False) -> set[str]:
     return {token.text for token in tokenize(text) if token.kind == "name"}
 
 
-_AGO = re.compile(r"\bago\(\s*(\d+)\s*(d|h|m|s)\s*\)")
-_UNIT_SECONDS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+def _timespan_seconds(text: str) -> float | None:
+    match = _TIMESPAN.match(text)
+    return float(match.group(1)) * _UNIT_SECONDS[match.group(2)] if match else None
 
 
-def longest_ago_seconds(query: str) -> int:
-    """The longest literal ago(...) in the query, in seconds, or 0 when there is none."""
-    text = strip_comments(query)
-    return max((int(n) * _UNIT_SECONDS[u] for n, u in _AGO.findall(text)), default=0)
+def lookback(query: str) -> tuple[float, list[str]]:
+    """How far back the query reaches, in seconds, and anything that could not be worked out.
+
+    Sentinel only gives a rule the data of its Period, so a rule must not look back further.
+    Understood: ago(1h), ago(Name) where "let Name = 1h;" and now() - 1h (or - Name). Anything else
+    inside ago(), and now() with an offset, is reported: a check that cannot read the value must
+    say so, not assume it is fine.
+    """
+    tokens = tokenize(query)
+    timespans: dict[str, float] = {}
+    for index, token in enumerate(tokens[:-4]):
+        if token.kind == "name" and token.text == "let" and tokens[index + 2].text == "=" and tokens[index + 4].text == ";":
+            seconds = _timespan_seconds(tokens[index + 3].text)
+            if seconds is not None:
+                timespans[tokens[index + 1].text] = seconds
+
+    def value(token: Token) -> float | None:
+        if token.kind == "number":
+            return _timespan_seconds(token.text)
+        return timespans.get(token.text) if token.kind == "name" else None
+
+    longest = 0.0
+    problems: list[str] = []
+    for index, token in enumerate(tokens):
+        if token.kind != "name" or index + 1 >= len(tokens) or tokens[index + 1].text != "(":
+            continue
+        if index and tokens[index - 1].text == ".":
+            continue
+        if token.text == "ago":
+            inside = tokens[index + 2] if index + 2 < len(tokens) else None
+            closes = index + 3 < len(tokens) and tokens[index + 3].text == ")"
+            seconds = value(inside) if inside is not None and closes else None
+            if seconds is None:
+                problems.append(f"line {token.line}: cannot tell how far ago(...) looks back; use a literal such as "
+                                "ago(1h) or a name set with 'let Name = 1h;'")  # fmt: skip
+            else:
+                longest = max(longest, seconds)
+        elif token.text == "now":
+            if index + 2 >= len(tokens) or tokens[index + 2].text != ")":
+                problems.append(f"line {token.line}: now() with an offset is not understood; use ago(...)")
+            elif index + 4 < len(tokens) and tokens[index + 3].text == "-":
+                seconds = value(tokens[index + 4])
+                if seconds is not None:
+                    longest = max(longest, seconds)
+    return longest, problems

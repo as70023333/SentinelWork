@@ -56,11 +56,47 @@ class RepositoryRuleTests(unittest.TestCase):
     def test_every_rule_passes_the_checks(self):
         self.assertEqual(rules.check_rules(self.rules, SCHEMA), [])
 
-    def test_four_rules_in_each_of_the_seven_areas(self):
-        self.assertEqual(len(self.rules), 28)
+    def test_every_area_has_rules_numbered_without_gaps(self):
         for area, details in rules.AREAS.items():
             ids = [rule.id for rule in self.rules if rule.area == area]
-            self.assertEqual(ids, [f"{details['prefix']}-00{n}" for n in range(1, 5)], area)
+            self.assertTrue(ids, f"no rules in {area}")
+            self.assertEqual(ids, [f"{details['prefix']}-{n:03d}" for n in range(1, len(ids) + 1)], area)
+
+    def test_no_rule_file_is_left_out(self):
+        self.assertEqual(rules.stray_rule_files(), [])
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in ("ID-900-loose.kql", "identity-sign-ins/ID-901-ok.kql", "identity-sign-ins/ID-902-upper.KQL",
+                         "identity-sign-ins/old/ID-903-nested.kql"):  # fmt: skip
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text("x", encoding="utf-8")
+            stray = rules.stray_rule_files(root)
+            self.assertEqual(len(stray), 3)
+            self.assertFalse(any("ID-901" in line for line in stray))
+
+    def test_a_rule_keeps_its_identifier(self):
+        # Sentinel knows each rule by this GUID. If it changed, a redeployment would create a second
+        # copy of every rule next to the first, so the value is pinned here.
+        self.assertEqual(self.rules[0].id, "ID-001")
+        self.assertEqual(self.rules[0].guid, "07dec7c4-739b-532d-af40-42fb21e26b80")
+
+    def test_event_rules_tolerate_late_data(self):
+        # A rule that looks for events must pick them by arrival time and read further back than it
+        # runs; otherwise an event that reaches the workspace late is never evaluated. Rules that
+        # report a state (a table gone quiet, an incident left open, a noisy rule) are the exception.
+        state_rules = {"SO-001", "SO-003", "SO-004"}
+        for rule in self.rules:
+            with self.subTest(rule=rule.id):
+                if rule.id in state_rules:
+                    continue
+                self.assertIn("ingestion_time()", rule.query)
+                self.assertGreater(rules.duration_seconds(rule.period), rules.duration_seconds(rule.frequency))
+
+    def test_no_query_has_an_empty_line_or_a_comment_left_in_the_template(self):
+        for rule in self.rules:
+            query = rules.rule_properties(rule, enabled=False)["query"]
+            self.assertNotIn("\n\n", query, rule.id)
+            self.assertNotIn("//", query.replace("https://", ""), rule.id)
 
     def test_rule_guids_are_stable_and_unique(self):
         guids = [rule.guid for rule in self.rules]
@@ -99,10 +135,12 @@ class RepositoryRuleTests(unittest.TestCase):
         self.assertEqual(properties["incidentConfiguration"]["groupingConfiguration"]["groupByCustomDetails"], ["DataType"])
 
     def test_operational_rules_have_no_tactics(self):
-        rule = next(rule for rule in self.rules if rule.id == "SO-003")
-        properties = rules.rule_properties(rule, enabled=False)
-        self.assertEqual(properties["tactics"], [])
-        self.assertEqual(properties["techniques"], [])
+        operational = [rule for rule in self.rules if rule.area == "soc-operations"]
+        self.assertTrue(operational)
+        for rule in operational:
+            properties = rules.rule_properties(rule, enabled=False)
+            self.assertEqual(properties["tactics"], [], rule.id)
+            self.assertEqual(properties["techniques"], [], rule.id)
 
     def test_technique_table_only_uses_known_tactics(self):
         for technique, tactics in rules.TECHNIQUE_TACTICS.items():
@@ -131,6 +169,7 @@ class HeaderTests(unittest.TestCase):
             (changed("// Entities: IP(Address=IPAddress)", "// Entities: IP Address"), "Type(Identifier=Column"),
             (changed("// Entities: IP(Address=IPAddress)", "// Entities: IP(Address)"), "Identifier=Column pairs"),
             (changed("// Period: PT1H", "// Period: PT1H\n// Trigger: MoreThan"), "Trigger must look like"),
+            (changed("// Period: PT1H", "// Period: PT1H\n// Trigger: GreaterThan \u00b2"), "Trigger must look like"),
             (changed("// Period: PT1H", "// Period: PT1H\n// Incidents: sometimes"), "Incidents"),
         ):
             with self.subTest(expected=expected):
@@ -143,7 +182,7 @@ class HeaderTests(unittest.TestCase):
         self.assertEqual(rules.duration_seconds("PT1H"), 3600)
         self.assertEqual(rules.duration_seconds("P1D"), 86400)
         self.assertEqual(rules.duration_seconds("P2DT1H30M"), 2 * 86400 + 5400)
-        for bad in ("", "P", "PT", "1h", "PT1S", "P1W", "PT-1H", "pt1h"):
+        for bad in ("", "P", "PT", "1h", "PT1S", "P1W", "PT-1H", "pt1h", "P1DT", "PT\u0661H", "PT1H "):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     rules.duration_seconds(bad)
@@ -183,10 +222,58 @@ class CheckTests(unittest.TestCase):
             (changed("// Period: PT1H", "// Period: PT1H\n// Alerts: OnePerDay"), "Alerts 'OnePerDay'"),
             (changed("// Period: PT1H", "// Period: PT1H\n// Trigger: Above 0"), "Trigger operator"),
             (changed("| where Attempts > 20", "| where Attempts > {Threshold}"), "placeholder"),
+            (changed("Entities: IP(Address=IPAddress)", "Entities: IP(Address=IPAddress, Address=IPAddress)"), "uses an identifier twice"),
+            (changed("// Period: PT1H", "// Period: PT1H\n// Incidents: Entities(), PT5H"), "must name at least one thing"),
+            (changed("// Period: PT1H", "// Period: PT1H\n// Incidents: CustomDetails(), PT5H"), "must name at least one thing"),
+            (changed("ago(1h)", "ago(Window)"), "cannot tell how far ago(...) looks back"),
+            (changed("| where TimeGenerated > ago(1h)", "| where TimeGenerated > now(-7d)"), "now() with an offset"),
+            (changed("| where ResultType ==", "\n| where ResultType =="), "has an empty line"),
         )
         for text, expected in cases:
             with self.subTest(expected=expected):
                 self.assertProblem(text, expected)
+
+    def test_a_let_name_used_as_lookback_is_measured(self):
+        text = changed("SigninLogs\n| where TimeGenerated > ago(1h)", "let Window = 7d;\nSigninLogs\n| where TimeGenerated > ago(Window)")
+        self.assertProblem(text, "looks back further")
+
+    def test_problems_in_the_query_give_the_line_of_the_file(self):
+        header_lines = VALID[: VALID.index("\nSigninLogs\n") + 1].count("\n")
+        _, problems = check(changed("ResultType ==", "ResultTyp =="))
+        self.assertTrue(any(p.startswith(f"line {header_lines + 3}: unknown name ResultTyp") for p in problems), problems)
+        _, problems = check(changed('ResultType == "50126"', 'ResultType == "50126'))
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].startswith(f"line {header_lines + 3}: unexpected character"), problems)
+        _, problems = check(changed("ago(1h)", "ago(Window)"))
+        self.assertTrue(any(p.startswith(f"line {header_lines + 2}: cannot tell") for p in problems), problems)
+
+    def test_files_with_a_byte_order_mark_or_other_line_endings(self):
+        for text in ("\ufeff" + VALID, VALID.replace("\n", "\r\n"), VALID.replace("\n", "\r")):
+            with self.subTest(start=repr(text[:12])):
+                with tempfile.TemporaryDirectory() as folder:
+                    path = Path(folder) / "identity-sign-ins" / "ID-900-test.kql"
+                    path.parent.mkdir()
+                    path.write_bytes(text.encode("utf-8"))
+                    rule = rules.parse_rule(path)
+                    self.assertEqual(rules.check_rule(rule, SCHEMA), [])
+                    self.assertNotIn("\r", rule.query)
+
+    def test_a_file_that_is_not_utf8_names_the_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "identity-sign-ins" / "ID-900-test.kql"
+            path.parent.mkdir()
+            path.write_bytes(VALID.encode("utf-8").replace(b"address", b"addre\xff\xfe", 1))
+            with self.assertRaises(rules.RuleError) as raised:
+                rules.parse_rule(path)
+            self.assertIn("ID-900-test.kql", str(raised.exception))
+            self.assertIn("not UTF-8", str(raised.exception))
+
+    def test_ten_entity_mappings_are_allowed_and_eleven_are_not(self):
+        ten = "; ".join(["IP(Address=IPAddress)"] * 10)
+        _, problems = check(changed("Entities: IP(Address=IPAddress)", f"Entities: {ten}"))
+        self.assertEqual(problems, [])
+        _, problems = check(changed("Entities: IP(Address=IPAddress)", f"Entities: {ten}; IP(Address=IPAddress)"))
+        self.assertTrue(any("at most 10 entity mappings" in p for p in problems))
 
     def test_a_long_lookback_needs_an_hourly_schedule(self):
         text = changed("Frequency: PT1H", "Frequency: PT15M").replace("Period: PT1H", "Period: P7D")

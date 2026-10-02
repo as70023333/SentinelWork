@@ -1,9 +1,6 @@
 // Title: Log source stopped sending data
 // Id: SO-001
 // Severity: Medium
-// Tactics: DefenseEvasion
-// Techniques: T1562
-// Sub-techniques: T1562.008
 // Tables: Usage
 // Frequency: PT6H
 // Period: P7D
@@ -11,7 +8,9 @@
 // Custom details: DataType, HoursSilent, LastRecord, AverageDailyMB
 // Description: A table that the detection rules depend on received data on most of the last seven
 //   days and has received nothing for several hours. Every rule that reads the table is blind until
-//   it is fixed, and nothing else will tell you, because a rule with no data raises no alerts.
+//   it is fixed, and nothing else will tell you, because a rule with no data raises no alerts. It is
+//   an operational rule and has no MITRE ATT&CK mapping, although an attacker who switches off
+//   logging causes the same alert.
 // False positives: A source that is quiet out of hours (email on a public holiday), a planned
 //   connector change, or a table you list in WatchedTables but only use occasionally.
 // Tuning: Edit WatchedTables to the tables your rules read. Raise QuietHours for sources that are
@@ -31,6 +30,6 @@ Usage
             AverageDailyMB = round(sum(Quantity) / 7.0, 1)
             by DataType
 | where ActiveDays >= 5
-| extend HoursSilent = datetime_diff("hour", now(), LastRecord)
+| extend HoursSilent = toint((now() - LastRecord) / 1h)
 | where HoursSilent >= QuietHours
 | project DataType, LastRecord, HoursSilent, ActiveDays, AverageDailyMB

@@ -18,22 +18,18 @@
       "apiVersion": "2024-03-01",
       "properties": {
         "displayName": "Log source stopped sending data",
-        "description": "A table that the detection rules depend on received data on most of the last seven days and has received nothing for several hours. Every rule that reads the table is blind until it is fixed, and nothing else will tell you, because a rule with no data raises no alerts.\n\nFalse positives: A source that is quiet out of hours (email on a public holiday), a planned connector change, or a table you list in WatchedTables but only use occasionally.\n\nResponse: Open the data connector page for the source, check its health and any recent change to the connector, agent, diagnostic setting or data collection rule.\n\nMITRE ATT&CK sub-techniques: T1562.008.\n\nSource: SentinelWork rule SO-001.",
+        "description": "A table that the detection rules depend on received data on most of the last seven days and has received nothing for several hours. Every rule that reads the table is blind until it is fixed, and nothing else will tell you, because a rule with no data raises no alerts. It is an operational rule and has no MITRE ATT&CK mapping, although an attacker who switches off logging causes the same alert.\n\nFalse positives: A source that is quiet out of hours (email on a public holiday), a planned connector change, or a table you list in WatchedTables but only use occasionally.\n\nResponse: Open the data connector page for the source, check its health and any recent change to the connector, agent, diagnostic setting or data collection rule.\n\nSource: SentinelWork rule SO-001.",
         "severity": "Medium",
         "enabled": false,
-        "query": "let WatchedTables = dynamic([\"SigninLogs\", \"AuditLogs\", \"AzureActivity\", \"CommonSecurityLog\", \"Syslog\",\n                             \"DeviceProcessEvents\", \"DeviceFileEvents\", \"DeviceEvents\", \"EmailEvents\",\n                             \"UrlClickEvents\", \"CloudAppEvents\"]);\nlet QuietHours = 6;\nUsage\n| where TimeGenerated > ago(7d)\n| where DataType in (WatchedTables)\n| summarize LastRecord = max(TimeGenerated),\n            ActiveDays = dcount(bin(TimeGenerated, 1d)),\n            AverageDailyMB = round(sum(Quantity) / 7.0, 1)\n            by DataType\n| where ActiveDays >= 5\n| extend HoursSilent = datetime_diff(\"hour\", now(), LastRecord)\n| where HoursSilent >= QuietHours\n| project DataType, LastRecord, HoursSilent, ActiveDays, AverageDailyMB",
+        "query": "let WatchedTables = dynamic([\"SigninLogs\", \"AuditLogs\", \"AzureActivity\", \"CommonSecurityLog\", \"Syslog\",\n                             \"DeviceProcessEvents\", \"DeviceFileEvents\", \"DeviceEvents\", \"EmailEvents\",\n                             \"UrlClickEvents\", \"CloudAppEvents\"]);\nlet QuietHours = 6;\nUsage\n| where TimeGenerated > ago(7d)\n| where DataType in (WatchedTables)\n| summarize LastRecord = max(TimeGenerated),\n            ActiveDays = dcount(bin(TimeGenerated, 1d)),\n            AverageDailyMB = round(sum(Quantity) / 7.0, 1)\n            by DataType\n| where ActiveDays >= 5\n| extend HoursSilent = toint((now() - LastRecord) / 1h)\n| where HoursSilent >= QuietHours\n| project DataType, LastRecord, HoursSilent, ActiveDays, AverageDailyMB",
         "queryFrequency": "PT6H",
         "queryPeriod": "P7D",
         "triggerOperator": "GreaterThan",
         "triggerThreshold": 0,
         "suppressionDuration": "PT5H",
         "suppressionEnabled": false,
-        "tactics": [
-          "DefenseEvasion"
-        ],
-        "techniques": [
-          "T1562"
-        ],
+        "tactics": [],
+        "techniques": [],
         "eventGroupingSettings": {
           "aggregationKind": "AlertPerResult"
         },
@@ -70,19 +66,15 @@
         "description": "A scheduled or near-real-time analytics rule failed more than once in the last hour. A rule that cannot run detects nothing, and Sentinel disables a rule automatically after repeated failures. Requires the health monitoring setting, which creates the SentinelHealth table.\n\nFalse positives: A short platform problem that resolves itself; the failures stop within the hour.\n\nResponse: Read Reason. The usual causes are a table that no longer exists, a query that times out, or a permission removed from a rule that reads another workspace. Fix it and re-enable the rule if Sentinel disabled it.\n\nSource: SentinelWork rule SO-002.",
         "severity": "Medium",
         "enabled": false,
-        "query": "let MinFailures = 2;\nSentinelHealth\n| where TimeGenerated > ago(1h)\n| where SentinelResourceType =~ \"Analytics Rule\" and Status =~ \"Failure\"\n| summarize Failures = count(),\n            FirstFailure = min(TimeGenerated),\n            LastFailure = max(TimeGenerated),\n            Reason = take_any(Reason),\n            Details = take_any(Description)\n            by RuleName = SentinelResourceName, RuleResourceId = SentinelResourceId, RuleKind = SentinelResourceKind\n| where Failures >= MinFailures\n| project FirstFailure, LastFailure, RuleName, RuleKind, Failures, Reason, Details, RuleResourceId",
+        "query": "let MinFailures = 2;\nSentinelHealth\n| where TimeGenerated > ago(2h)\n| where ingestion_time() > ago(1h)\n| where SentinelResourceType =~ \"Analytics Rule\" and Status =~ \"Failure\"\n| summarize Failures = count(),\n            FirstFailure = min(TimeGenerated),\n            LastFailure = max(TimeGenerated),\n            Reason = take_any(Reason),\n            Details = take_any(Description)\n            by RuleName = SentinelResourceName, RuleResourceId = SentinelResourceId, RuleKind = SentinelResourceKind\n| where Failures >= MinFailures\n| project FirstFailure, LastFailure, RuleName, RuleKind, Failures, Reason, Details, RuleResourceId",
         "queryFrequency": "PT1H",
-        "queryPeriod": "PT1H",
+        "queryPeriod": "PT2H",
         "triggerOperator": "GreaterThan",
         "triggerThreshold": 0,
         "suppressionDuration": "PT5H",
         "suppressionEnabled": false,
-        "tactics": [
-          "DefenseEvasion"
-        ],
-        "techniques": [
-          "T1562"
-        ],
+        "tactics": [],
+        "techniques": [],
         "eventGroupingSettings": {
           "aggregationKind": "AlertPerResult"
         },
@@ -119,7 +111,7 @@
         "description": "A high severity incident is still in status New, has no owner and has not been touched by the Autonomous SOC Analyst (no soc-agent label) half an hour after it was created. It is the safety net for the night shift: if both the agent and the on-call analyst miss an incident, this says so while it still matters.\n\nFalse positives: None in the usual sense. If it fires often, the queue is under-staffed or the agent is not running.\n\nResponse: Assign the incident now. Then find out why it was missed: check that the agent's automation rule and playbook ran, and who was on call.\n\nSource: SentinelWork rule SO-003.",
         "severity": "Medium",
         "enabled": false,
-        "query": "SecurityIncident\n| where TimeGenerated > ago(2h)\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Severity == \"High\" and Status == \"New\"\n| where CreatedTime between (ago(60m) .. ago(30m))\n| where isempty(tostring(Owner.assignedTo)) and isempty(tostring(Owner.userPrincipalName))\n| where tostring(Labels) !has \"soc-agent\"\n\n| where Title != \"High severity incident not picked up within 30 minutes\"\n| project CreatedTime, IncidentNumber, IncidentTitle = Title, Severity, Status,\n          MinutesOpen = datetime_diff(\"minute\", now(), CreatedTime), Provider = ProviderName, IncidentUrl",
+        "query": "SecurityIncident\n| where TimeGenerated > ago(2h)\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\n| where Severity == \"High\" and Status == \"New\"\n| where CreatedTime between (ago(60m) .. ago(30m))\n| where isempty(tostring(Owner.assignedTo)) and isempty(tostring(Owner.userPrincipalName))\n| where tostring(Labels) !has \"soc-agent\"\n| where Title != \"High severity incident not picked up within 30 minutes\"\n| project CreatedTime, IncidentNumber, IncidentTitle = Title, Severity, Status,\n          MinutesOpen = toint((now() - CreatedTime) / 1m), Provider = ProviderName, IncidentUrl",
         "queryFrequency": "PT30M",
         "queryPeriod": "PT2H",
         "triggerOperator": "GreaterThan",

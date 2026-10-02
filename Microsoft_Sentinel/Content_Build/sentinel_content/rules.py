@@ -87,13 +87,14 @@ TECHNIQUE_TACTICS: dict[str, tuple[str, ...]] = {
     "T1566": ("InitialAccess",),
     "T1567": ("Exfiltration",),
     "T1621": ("CredentialAccess",),
+    "T1651": ("Execution",),
 }
 
 # Limits Sentinel places on a scheduled rule.
 MAX_NAME = 256
 MAX_DESCRIPTION = 5000
 MAX_QUERY = 10000
-MAX_ENTITY_MAPPINGS = 5
+MAX_ENTITY_MAPPINGS = 10
 MAX_IDENTIFIERS = 3
 MAX_CUSTOM_DETAILS = 20
 MIN_SECONDS = 5 * 60
@@ -110,7 +111,7 @@ REQUIRED_KEYS = (
 )  # fmt: skip
 
 _ID_SPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/as70023333/SentinelWork")
-_DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$")
+_DURATION = re.compile(r"^P(?:([0-9]+)D)?(?:T(?=[0-9])(?:([0-9]+)H)?(?:([0-9]+)M)?)?$")
 _HEADER_LINE = re.compile(r"^// ([A-Z][A-Za-z\- ]*?): ?(.*)$")
 _CONTINUATION = re.compile(r"^//\s{3,}(\S.*)$")
 _ENTITY = re.compile(r"^([A-Za-z]+)\(([^()]*)\)$")
@@ -146,6 +147,7 @@ class Rule:
     response: str
     references: tuple[str, ...]
     query: str
+    query_line: int = 1  # the line of the file the query starts on
 
     @property
     def guid(self) -> str:
@@ -171,10 +173,10 @@ def duration_seconds(text: str) -> int:
     return days * 86400 + hours * 3600 + minutes * 60
 
 
-def split_header(text: str, name: str) -> tuple[dict[str, str], str]:
-    """Split a rule file into its header fields and the query below them."""
+def split_header(text: str, name: str) -> tuple[dict[str, str], str, int]:
+    """Split a rule file into its header fields, the query below them, and the query's first line."""
     fields: dict[str, str] = {}
-    lines = text.replace("\r\n", "\n").split("\n")
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     current = ""
     index = 0
     for index, line in enumerate(lines):
@@ -195,8 +197,10 @@ def split_header(text: str, name: str) -> tuple[dict[str, str], str]:
         fields[current] = match.group(2).strip()
     else:
         index = len(lines)
-    query = "\n".join(lines[index:]).strip("\n")
-    return fields, query
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    query = "\n".join(lines[index:]).rstrip()
+    return fields, query, index + 1
 
 
 def _list(value: str) -> tuple[str, ...]:
@@ -256,12 +260,16 @@ def _parse_incidents(value: str, name: str) -> dict:
 def parse_rule(path: Path) -> Rule:
     """Read one rule file. Raises RuleError when the header cannot be read at all."""
     name = f"{path.parent.name}/{path.name}"
-    fields, query = split_header(path.read_text(encoding="utf-8"), name)
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise RuleError(f"{name}: the file is not UTF-8 text ({error.reason} at byte {error.start})") from error
+    fields, query, query_line = split_header(text, name)
     missing = [key for key in REQUIRED_KEYS if not fields.get(key)]
     if missing:
         raise RuleError(f"{name}: missing header field(s): {', '.join(missing)}")
     trigger = fields.get("Trigger", "GreaterThan 0").split()
-    if len(trigger) != 2 or not trigger[1].isdigit():
+    if len(trigger) != 2 or not re.fullmatch(r"[0-9]{1,5}", trigger[1]):
         raise RuleError(f"{name}: Trigger must look like 'GreaterThan 0'")
     return Rule(
         path=path,
@@ -287,6 +295,7 @@ def parse_rule(path: Path) -> Rule:
         response=fields["Response"],
         references=tuple(fields.get("References", "").split()),
         query=query,
+        query_line=query_line,
     )
 
 
@@ -335,7 +344,11 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
             problems.append("Period must be at least as long as Frequency, or events between runs are never read")
         if seconds["Period"] > 2 * 86400 and seconds["Frequency"] < 3600:
             problems.append("a rule that reads more than 2 days must run no more often than hourly")
-        longest = kql.longest_ago_seconds(rule.query)
+        try:
+            longest, unclear = kql.lookback(rule.query)
+        except kql.KqlError:
+            longest, unclear = 0.0, []  # reported with its line further down
+        problems.extend(_file_line(problem, rule) for problem in unclear)
         if longest > seconds["Period"]:
             problems.append(f"the query looks back further (ago) than Period {rule.period}; Sentinel only reads the Period")
     if rule.trigger_operator not in TRIGGER_OPERATORS:
@@ -354,6 +367,8 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
             continue
         if not 1 <= len(pairs) <= MAX_IDENTIFIERS:
             problems.append(f"Entities: {entity_type} needs 1 to {MAX_IDENTIFIERS} identifiers")
+        if len({identifier for identifier, _ in pairs}) != len(pairs):
+            problems.append(f"Entities: {entity_type} uses an identifier twice")
         for identifier, column in pairs:
             if identifier not in identifiers:
                 problems.append(f"Entities: {entity_type} has no identifier {identifier!r}")
@@ -384,6 +399,8 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
             problems.append(f"Incidents: groups by custom detail {key}, which the rule does not define")
     if incidents["create"] and incidents["method"] == "AllEntities" and not rule.entities:
         problems.append("Incidents: grouping by all entities needs at least one entity mapping")
+    if incidents["method"] == "Selected" and not incidents["entities"] and not incidents["details"]:
+        problems.append("Incidents: Entities(...) or CustomDetails(...) must name at least one thing to group by")
 
     for label, value in (("Description", rule.description), ("False positives", rule.false_positives),
                          ("Tuning", rule.tuning), ("Response", rule.response)):  # fmt: skip
@@ -397,15 +414,17 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
 
     if not rule.query:
         return problems + ["the file has no query below the header"]
-    body = kql.strip_comments(rule.query)
-    if not 1 <= len(body) <= MAX_QUERY:
-        problems.append(f"the query must be 1 to {MAX_QUERY} characters")
-    problems.extend(f"query {problem}" for problem in kql.check_names(rule.query, schema))
     try:
         tokens = kql.tokenize(rule.query)
-    except kql.KqlError:
-        return problems
-    if kql.has_placeholder(tokens):
+        body = kql.strip_comments(rule.query)
+    except kql.KqlError as error:
+        return problems + [_file_line(str(error), rule)]
+    if not 1 <= len(body) <= MAX_QUERY:
+        problems.append(f"the query must be 1 to {MAX_QUERY} characters")
+    if "\n\n" in body:
+        problems.append("the query has an empty line; the Logs editor would run only the part above it")
+    problems.extend(kql.check_names(rule.query, schema, first_line=rule.query_line))
+    if kql.has_placeholder(rule.query):
         problems.append("a rule query must not contain a workbook placeholder such as {TimeRange}")
     used = kql.tables_used(tokens, schema)
     if sorted(used) != sorted(rule.tables):
@@ -415,6 +434,25 @@ def check_rule(rule: Rule, schema: dict[str, dict[str, str]]) -> list[str]:
         if column not in names:
             problems.append(f"column {column} is mapped but never appears in the query")
     return problems
+
+
+def _file_line(problem: str, rule: Rule) -> str:
+    """Rewrite 'line N' counted within the query as the line of the rule file."""
+    match = re.match(r"line (\d+)", problem)
+    if match is None:
+        return problem
+    return f"line {int(match.group(1)) + rule.query_line - 1}{problem[match.end():]}"
+
+
+def stray_rule_files(rules_dir: Path | None = None) -> list[str]:
+    """Rule files the build would silently ignore: wrong folder depth or an upper-case extension."""
+    root = rules_dir or RULES_DIR
+    loaded = set(root.glob("*/*.kql"))
+    return [
+        f"{path.relative_to(root).as_posix()}: rule files must be Detection-rules/<area>/<name>.kql"
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and path.suffix.lower() == ".kql" and path not in loaded
+    ]
 
 
 def load_rules(rules_dir: Path | None = None) -> list[Rule]:

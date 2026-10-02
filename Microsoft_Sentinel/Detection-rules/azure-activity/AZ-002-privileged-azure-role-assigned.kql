@@ -6,7 +6,7 @@
 // Sub-techniques: T1098.003
 // Tables: AzureActivity
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT3H
 // Entities: Account(FullName=Caller); IP(Address=CallerIpAddress); AzureResource(ResourceId=Scope)
 // Custom details: RoleName, PrincipalId, PrincipalType
 // Description: Someone assigned Owner, User Access Administrator, Role Based Access Control
@@ -25,17 +25,20 @@ let PrivilegedRoleIds = dynamic({
     "f58310d9-a9f6-439a-9e8d-f62e7b41a168": "Role Based Access Control Administrator",
     "b24988ac-6180-42a0-ab88-20f7382dd24c": "Contributor"});
 let AllowedCallers = dynamic([]);
-let Writes = AzureActivity
-    | where TimeGenerated > ago(1h)
-    | where OperationNameValue =~ "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE";
-let Succeeded = Writes
+let Succeeded = AzureActivity
+    | where TimeGenerated > ago(2h)
+    // Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+    | where ingestion_time() > ago(1h)
+    | where OperationNameValue =~ "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE"
     | where ActivityStatusValue =~ "Success"
-    | distinct CorrelationId;
-Writes
+    | distinct CorrelationId, _ResourceId;
+AzureActivity
+| where TimeGenerated > ago(3h)
+| where OperationNameValue =~ "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE"
 // The request (which role, for whom) is only in the record written when the operation starts.
 | where ActivityStatusValue =~ "Start"
-| where CorrelationId in (Succeeded)
-| where tolower(Caller) !in (AllowedCallers)
+| join kind=inner Succeeded on CorrelationId, _ResourceId
+| where Caller !in~ (AllowedCallers)
 | extend Request = coalesce(tostring(Properties_d), Properties)
 | extend RoleDefinitionId = tolower(extract(@"(?i)roleDefinitions/([0-9a-f\-]{36})", 1, Request)),
          PrincipalId = extract(@"(?i)principalId\W+([0-9a-f\-]{36})", 1, Request),

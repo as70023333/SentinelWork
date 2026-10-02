@@ -2,16 +2,16 @@
 // Id: AZ-004
 // Severity: Medium
 // Tactics: Execution
-// Techniques: T1059
+// Techniques: T1651
 // Tables: AzureActivity
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: Account(FullName=Caller); IP(Address=CallerIpAddress); AzureResource(ResourceId=ResourceId)
 // Custom details: Invocations, Operation, ResourceGroup
 // Description: Someone used the Azure Run Command feature to execute a script inside a virtual
 //   machine or Arc-enabled server. The script runs as SYSTEM or root and needs no network path or
 //   credentials for the machine, only an Azure role, which makes it a favourite way to move from a
-//   compromised cloud identity onto servers (MITRE ATT&CK T1651, Cloud Administration Command).
+//   compromised cloud identity onto servers.
 // False positives: Operations teams and automation that use Run Command for maintenance.
 // Tuning: Add the automation identities to AllowedCallers. If nobody should use the feature, deny
 //   the runCommand action with a custom role or Azure Policy and raise the severity to High.
@@ -20,13 +20,15 @@
 // References: https://learn.microsoft.com/azure/virtual-machines/run-command-overview
 let AllowedCallers = dynamic([]);
 AzureActivity
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where OperationNameValue in~ ("MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION",
                                 "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMANDS/WRITE",
                                 "MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMAND/ACTION",
                                 "MICROSOFT.HYBRIDCOMPUTE/MACHINES/RUNCOMMANDS/WRITE")
 | where ActivityStatusValue in~ ("Start", "Accept", "Success")
-| where tolower(Caller) !in (AllowedCallers)
+| where Caller !in~ (AllowedCallers)
 | summarize Invocations = dcount(CorrelationId),
             Statuses = make_set(ActivityStatusValue, 5),
             FirstSeen = min(TimeGenerated),

@@ -21,13 +21,15 @@
 // References: https://learn.microsoft.com/entra/identity/monitoring-health/concept-sign-ins
 let ExpectedCountries = dynamic([]);
 let Known = SigninLogs
-    | where TimeGenerated between (ago(14d) .. ago(1h))
+    | where TimeGenerated between (ago(14d) .. ago(2h))
     | where ResultType == "0" and isnotempty(Location)
     | summarize by UserId, Location;
 let History = Known
     | summarize KnownCountries = strcat_array(make_set(Location, 20), ", ") by UserId;
 SigninLogs
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where ResultType == "0" and isnotempty(Location)
 | where Location !in (ExpectedCountries)
 | join kind=leftanti Known on UserId, Location

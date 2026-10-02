@@ -37,17 +37,27 @@ RANGES_MS = {
 SEVERITY_COLOURS = (("High", "redBright"), ("Medium", "orange"), ("Low", "yellow"), ("Informational", "gray"))
 PALETTES = ("blue", "green", "orange", "purple", "turquoise", "redBright", "yellow", "gray", "coldHot", "greenRed",
             "redGreen")  # fmt: skip
+SERIES_COLOURS = ("redBright", "red", "orange", "yellow", "green", "greenDark", "blue", "blueDark", "lightBlue",
+                  "turquoise", "purple", "magenta", "pink", "brown", "gray")  # fmt: skip
+# The names of the first three items of every workbook this tool writes. A .json file in the
+# Workbooks folder that starts like this was generated; anything else was made by hand.
+GENERATED_ITEM_NAMES = ["introduction", "parameters", "tabs"]
 
 _ID_SPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/as70023333/SentinelWork")
 
 ITEM_KEYS = {
     "text": {"kind", "text", "width"},
-    "tiles": {"kind", "title", "query", "width", "label", "value", "note", "empty"},
-    "table": {"kind", "title", "query", "width", "bars", "heat", "severity", "link", "link_label", "hide", "empty",
-              "palette", "rows"},
+    "tiles": {"kind", "title", "query", "width", "range", "label", "value", "note", "empty"},
+    "table": {"kind", "title", "query", "width", "range", "bars", "heat", "severity", "link", "link_label", "hide",
+              "empty", "palette", "rows"},
 }  # fmt: skip
 for _chart in CHARTS:
-    ITEM_KEYS[_chart] = {"kind", "title", "query", "width", "empty", "colours"}
+    ITEM_KEYS[_chart] = {"kind", "title", "query", "width", "range", "empty", "colours"}
+# What each setting must be, so a wrong type is reported by name instead of crashing later.
+TEXT_KEYS = ("kind", "text", "title", "query", "range", "label", "value", "note", "empty", "severity", "link",
+             "link_label", "palette")  # fmt: skip
+LIST_KEYS = ("bars", "heat", "hide")
+NUMBER_KEYS = ("width", "rows")
 
 
 class WorkbookError(ValueError):
@@ -93,11 +103,42 @@ def _uuid(*parts: str) -> str:
     return str(uuid.uuid5(_ID_SPACE, "/".join(parts)))
 
 
+def _text_list(value, what: str, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(entry, str) and entry for entry in value):
+        raise WorkbookError(f"{name}: {what} must be a list of names, like [\"A\", \"B\"]")
+    return tuple(value)
+
+
+def _parse_item(raw, where: str) -> Item:
+    if not isinstance(raw, dict):
+        raise WorkbookError(f"{where}: every [[tab.item]] must be a table of settings")
+    kind = raw.get("kind", "")
+    if kind not in KINDS:
+        raise WorkbookError(f"{where}: kind {kind!r} is not one of {', '.join(KINDS)}")
+    extra = set(raw) - ITEM_KEYS[kind]
+    if extra:
+        raise WorkbookError(f"{where}: a {kind} item cannot have {', '.join(sorted(extra))}")
+    for key, value in raw.items():
+        if key in TEXT_KEYS and not isinstance(value, str):
+            raise WorkbookError(f"{where}: {key} must be text in quotes")
+        if key in LIST_KEYS:
+            _text_list(value, key, where)
+        if key in NUMBER_KEYS and (isinstance(value, bool) or not isinstance(value, int)):
+            raise WorkbookError(f"{where}: {key} must be a whole number")
+        if key == "colours" and not (
+            isinstance(value, dict) and all(isinstance(colour, str) for colour in value.values())
+        ):
+            raise WorkbookError(f"{where}: colours must look like {{ SeriesName = \"blue\" }}")
+    return Item(kind, dict(raw))
+
+
 def parse_workbook(path: Path) -> Workbook:
     """Read one workbook source. Raises WorkbookError when the file cannot be understood."""
     name = path.name
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as error:
+        raise WorkbookError(f"{name}: the file is not UTF-8 text ({error.reason} at byte {error.start})") from error
     except tomllib.TOMLDecodeError as error:
         raise WorkbookError(f"{name}: not valid TOML: {error}") from error
     allowed = {"name", "file", "area", "summary", "intro", "tables", "optional_tables", "default_range", "tab"}
@@ -107,31 +148,34 @@ def parse_workbook(path: Path) -> Workbook:
     for key in ("name", "file", "area", "summary", "intro", "tables", "tab"):
         if not data.get(key):
             raise WorkbookError(f"{name}: missing {key!r}")
+    for key in ("name", "file", "area", "summary", "intro", "default_range"):
+        if key in data and not isinstance(data[key], str):
+            raise WorkbookError(f"{name}: {key} must be text in quotes")
+    tables = _text_list(data["tables"], "tables", name)
+    optional = _text_list(data.get("optional_tables", []), "optional_tables", name)
+    if not isinstance(data["tab"], list):
+        raise WorkbookError(f"{name}: tabs are written as [[tab]] sections")
     tabs = []
     for tab in data["tab"]:
-        if not isinstance(tab, dict) or not tab.get("name") or not tab.get("item"):
+        if not isinstance(tab, dict) or not isinstance(tab.get("name"), str) or not tab["name"].strip():
             raise WorkbookError(f"{name}: every [[tab]] needs a name and at least one [[tab.item]]")
-        items = []
-        for raw in tab["item"]:
-            kind = raw.get("kind", "")
-            if kind not in KINDS:
-                raise WorkbookError(f"{name}: tab {tab['name']!r}: kind {kind!r} is not one of {', '.join(KINDS)}")
-            extra = set(raw) - ITEM_KEYS[kind]
-            if extra:
-                raise WorkbookError(f"{name}: tab {tab['name']!r}: a {kind} item cannot have {', '.join(sorted(extra))}")
-            items.append(Item(kind, dict(raw)))
-        tabs.append(Tab(str(tab["name"]), tuple(items)))
+        if not isinstance(tab.get("item"), list) or not tab["item"]:
+            raise WorkbookError(f"{name}: every [[tab]] needs a name and at least one [[tab.item]]")
+        if set(tab) - {"name", "item"}:
+            raise WorkbookError(f"{name}: tab {tab['name']!r}: unknown setting(s): {', '.join(sorted(set(tab) - {'name', 'item'}))}")
+        items = [_parse_item(raw, f"{name}: tab {tab['name']!r} item {index}") for index, raw in enumerate(tab["item"], start=1)]
+        tabs.append(Tab(tab["name"], tuple(items)))
     return Workbook(
         path=path,
         key=path.stem,
-        name=str(data["name"]),
-        file=str(data["file"]),
-        area=str(data["area"]),
-        summary=str(data["summary"]),
-        intro=str(data["intro"]).strip(),
-        tables=tuple(data["tables"]),
-        optional_tables=tuple(data.get("optional_tables", ())),
-        default_range=str(data.get("default_range", "7d")),
+        name=data["name"],
+        file=data["file"],
+        area=data["area"],
+        summary=data["summary"],
+        intro=data["intro"].strip(),
+        tables=tables,
+        optional_tables=optional,
+        default_range=data.get("default_range", "7d"),
         tabs=tuple(tabs),
     )
 
@@ -154,6 +198,10 @@ def kql_string(text: str) -> str:
 
 def _rule_names(rules: list[Rule]) -> str:
     return "let RuleNames = dynamic([" + ", ".join(kql_string(rule.title) for rule in rules) + "]);"
+
+
+def _rule_ids(rules: list[Rule]) -> str:
+    return "let RuleIds = dynamic([" + ", ".join(kql_string(rule.guid) for rule in rules) + "]);"
 
 
 def detection_items(rules: list[Rule]) -> tuple[Item, ...]:
@@ -187,9 +235,10 @@ SecurityAlert
 | order by TimeGenerated desc
 | take 250"""
     incidents = f"""{names}
+{_rule_ids(rules)}
 SecurityIncident
 | summarize arg_max(TimeGenerated, *) by IncidentNumber
-| where Title in (RuleNames)
+| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)
 | extend LabelText = tostring(Labels)
 | project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,
           AssignedTo = tostring(Owner.assignedTo),
@@ -200,7 +249,8 @@ SecurityIncident
         "These are the detection rules in this repository for this area "
         "(`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, "
         "not enabled, or has had nothing to report in the time range. Alerts are matched to "
-        "rules by name, so a rule you rename in Sentinel stops being counted here."
+        "rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are "
+        "matched by rule name or by the rule's identifier, so they survive a rename."
     )
     return (
         Item("text", {"kind": "text", "text": text}),
@@ -236,24 +286,64 @@ def workbook_queries(book: Workbook, rules: list[Rule]) -> list[tuple[str, str]]
 # Checks
 
 
+def _slug(text: str) -> str:
+    """The form of a tab or item name used inside the workbook JSON."""
+    return "-".join(text.lower().replace("-", " ").split())
+
+
+def is_generated_workbook(path: Path) -> bool:
+    """True when a .json file in the Workbooks folder was written by this tool."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return [item.get("name") for item in data["items"][:3]] == GENERATED_ITEM_NAMES
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
+def _row_problems(tab: Tab) -> list[str]:
+    """Items share a row until their widths reach 100; a row must end exactly on 100."""
+    problems = []
+    used = 0
+    for index, item in enumerate(tab.items, start=1):
+        width = item.settings.get("width", 100)
+        if not isinstance(width, int):
+            return []  # reported as a width problem already
+        if used + width > 100:
+            problems.append(f"tab {tab.name!r} item {index}: the row before it only fills {used} of 100")
+            used = 0
+        used = (used + width) % 100
+    if used:
+        problems.append(f"tab {tab.name!r}: the last row only fills {used} of 100")
+    return problems
+
+
 def check_workbook(book: Workbook, rules: list[Rule], schema: dict[str, dict[str, str]]) -> list[str]:
     """Return everything wrong with one workbook source."""
     problems: list[str] = []
     if book.area not in AREAS:
         problems.append(f"area {book.area!r} is not one of {', '.join(AREAS)}")
-    if not book.file.isalnum():
+    if not (book.file.isascii() and book.file.isalnum()):
         problems.append("file must be letters and digits only; .json is added for you")
+    else:
+        target = WORKBOOKS_DIR / f"{book.file}.json"
+        if target.exists() and not is_generated_workbook(target):
+            problems.append(f"file {book.file!r} would overwrite Workbooks/{book.file}.json, which this tool did not write")
     if book.default_range not in RANGES_MS:
         problems.append(f"default_range {book.default_range!r} is not one of {', '.join(RANGES_MS)}")
     for table in (*book.tables, *book.optional_tables):
         if table not in schema:
             problems.append(f"table {table!r} is not in the schema file")
-    tab_names = [tab.name for tab in book.tabs]
-    if len(set(tab_names)) != len(tab_names) or DETECTIONS_TAB in tab_names:
+    slugs = [_slug(tab.name) for tab in book.tabs]
+    if len(set(slugs)) != len(slugs) or _slug(DETECTIONS_TAB) in slugs:
         problems.append(f"tab names must be unique and {DETECTIONS_TAB!r} is generated")
+    if "{" in book.name:
+        problems.append("name must not contain { }")
 
     read: set[str] = set()
     for tab in all_tabs(book, rules):
+        if "{" in tab.name:
+            problems.append(f"tab {tab.name!r}: a tab name must not contain {{ }}")
+        problems.extend(_row_problems(tab))
         for index, item in enumerate(tab.items, start=1):
             where = f"tab {tab.name!r} item {index}"
             settings = item.settings
@@ -261,11 +351,17 @@ def check_workbook(book: Workbook, rules: list[Rule], schema: dict[str, dict[str
             if not isinstance(width, int) or not 10 <= width <= 100:
                 problems.append(f"{where}: width must be a whole number from 10 to 100")
             if item.kind == "text":
-                if not str(settings.get("text", "")).strip():
+                if not settings.get("text", "").strip():
                     problems.append(f"{where}: a text item needs text")
                 continue
             if not settings.get("title"):
                 problems.append(f"{where}: needs a title")
+            elif "{" in settings["title"]:
+                problems.append(f"{where}: a title must not contain {{ }}")
+            if settings.get("range") is not None and settings["range"] not in RANGES_MS:
+                problems.append(f"{where}: range {settings['range']!r} is not one of {', '.join(RANGES_MS)}")
+            if not 1 <= settings.get("rows", 250) <= 10000:
+                problems.append(f"{where}: rows must be 1 to 10000")
             if not item.query:
                 problems.append(f"{where}: needs a query")
                 continue
@@ -291,6 +387,9 @@ def check_workbook(book: Workbook, rules: list[Rule], schema: dict[str, dict[str
             for column in columns:
                 if column and column not in names:
                     problems.append(f"{where}: column {column!r} is formatted but never appears in the query")
+            for series, colour in settings.get("colours", {}).items():
+                if colour not in SERIES_COLOURS:
+                    problems.append(f"{where}: colour {colour!r} for {series} is not one of {', '.join(SERIES_COLOURS)}")
             if item.kind in CHARTS and "render" in names:
                 problems.append(f"{where}: leave out 'render'; the item kind chooses the chart")
 
@@ -335,6 +434,10 @@ def _query_item(book: Workbook, tab: Tab, index: int, item: Item) -> dict:
         **LOGS,
         "visualization": item.kind,
     }
+    if settings.get("range"):
+        # A fixed range: the item ignores the time range picker (used for "what is open right now").
+        content["timeContext"] = {"durationMs": RANGES_MS[settings["range"]]}
+        del content["timeContextFromParameter"]
     if item.kind == "tiles":
         tiles: dict = {
             "titleContent": {"columnMatch": settings["label"], "formatter": 1},
@@ -369,7 +472,7 @@ def _query_item(book: Workbook, tab: Tab, index: int, item: Item) -> dict:
                                "formatOptions": {"linkTarget": "Url", "linkLabel": settings.get("link_label", "Open")}})  # fmt: skip
         for column in settings.get("hide", ()):
             formatters.append({"columnMatch": column, "formatter": 5})
-        content["gridSettings"] = {"formatters": formatters, "filter": True, "rowLimit": int(settings.get("rows", 250))}
+        content["gridSettings"] = {"formatters": formatters, "filter": True, "rowLimit": settings.get("rows", 250)}
     elif settings.get("colours"):
         content["chartSettings"] = {
             "seriesLabelSettings": [{"seriesName": name, "color": colour} for name, colour in settings["colours"].items()]
@@ -378,7 +481,7 @@ def _query_item(book: Workbook, tab: Tab, index: int, item: Item) -> dict:
         "type": 3,
         "content": content,
         "customWidth": str(settings.get("width", 100)),
-        "name": f"{tab.name} {index}".lower().replace(" ", "-"),
+        "name": f"{_slug(tab.name)}-{index}",
         "styleSettings": {"showBorder": True},
     }
 
@@ -388,7 +491,7 @@ def _text_item(tab: Tab, index: int, item: Item) -> dict:
         "type": 1,
         "content": {"json": str(item.settings["text"]).strip()},
         "customWidth": str(item.settings.get("width", 100)),
-        "name": f"{tab.name} {index}".lower().replace(" ", "-"),
+        "name": f"{_slug(tab.name)}-{index}",
     }
 
 
@@ -456,7 +559,7 @@ def gallery(book: Workbook, rules: list[Rule]) -> dict:
                 "type": 12,
                 "content": {"version": "NotebookGroup/1.0", "groupType": "editable", "items": group_items},
                 "conditionalVisibility": {"parameterName": TAB_PARAMETER, "comparison": "isEqualTo", "value": tab.name},
-                "name": f"tab-{tab.name}".lower().replace(" ", "-"),
+                "name": f"tab-{_slug(tab.name)}",
             }
         )
     return {

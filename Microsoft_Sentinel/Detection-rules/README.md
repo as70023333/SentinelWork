@@ -47,7 +47,7 @@ Rules that only repeat an alert a Microsoft product already raises were left out
 
 | Rule group | Data connector | Table must exist |
 |---|---|---|
-| ID, PA | Microsoft Entra ID (sign-in logs and audit logs) | `SigninLogs`, `AuditLogs` |
+| ID, PA | Microsoft Entra ID (sign-in logs and audit logs) | `SigninLogs`, `AuditLogs`. ID-004 also reads `AADNonInteractiveUserSignInLogs` when it is collected and works without it. |
 | EP, EX-002, EX-004 | Microsoft Defender XDR (device events) | `DeviceProcessEvents`, `DeviceEvents`, `DeviceFileEvents` |
 | EM, EX-003 | Microsoft Defender XDR (email, URL click and cloud app events) | `EmailEvents`, `UrlClickEvents`, `EmailPostDeliveryEvents`, `CloudAppEvents` |
 | AZ | Azure Activity | `AzureActivity` |
@@ -55,9 +55,10 @@ Rules that only repeat an alert a Microsoft product already raises were left out
 | SO-002 | Sentinel health monitoring switched on (Settings, then Auditing and health monitoring) | `SentinelHealth` |
 | SO-001, SO-003, SO-004 | Nothing extra | `Usage`, `SecurityIncident` |
 
-Sentinel checks a rule's query when the rule is created. A rule that reads a table your workspace
-does not have is rejected, which is why there is one template per area: deploy the areas you
-collect data for.
+Sentinel checks a rule's query when the rule is created, and a rule that reads a table your
+workspace does not have is rejected. That is why there is one template per area: deploy the areas
+you collect data for. If one rule in a template is rejected, Azure reports the deployment as failed
+but still creates the other rules in the file; the error names the rule that was refused.
 
 ## How to deploy
 
@@ -96,10 +97,20 @@ review: `python -m sentinel_content build --enabled --out <folder>` from
 
 ## When the rules run
 
-Most rules run every hour and read the hour that has just ended. Rules that compare with history
-(new country, mass download) read 14 days; rules that join to earlier events (a click on mail
-delivered days ago) read 7. `SO-003` runs every 30 minutes, `SO-001` every 6 hours and `SO-004`
-once a day. The catalogue lists the schedule of every rule.
+Most rules run every hour. `SO-003` runs every 30 minutes, `SO-001` every 6 hours and `SO-004` once
+a day. The catalogue lists the schedule of every rule.
+
+Log data does not arrive the moment it is created: a few minutes is normal, and Microsoft 365
+audit data can take more than an hour. A rule that simply read "the last hour" would never see an
+event that arrived late. So every rule that looks for events reads further back than it runs (two
+hours for most, four for Microsoft 365 audit data) and keeps the events that **reached the
+workspace** in the last hour, using `ingestion_time()`. Each event is evaluated once, whenever it
+arrives. This is the approach Microsoft documents for
+[ingestion delay](https://learn.microsoft.com/azure/sentinel/ingestion-delay).
+
+Rules that compare with history (new country, mass download) read 14 days; rules that join to
+earlier events (a click on mail delivered days ago, a USB drive mounted earlier in the week)
+read 7.
 
 An alert becomes an incident. Alerts from the same rule that share their entities within five
 hours join the same incident, so one password spray is one incident and not one per run.
@@ -139,7 +150,7 @@ SigninLogs
 | `Tactics`, `Techniques` | MITRE ATT&CK, as Sentinel names them. A technique must belong to a listed tactic. Operational rules have none. |
 | `Sub-techniques` | Recorded in the description and the catalogue. |
 | `Tables` | The tables the query reads. Checked against the query. |
-| `Frequency`, `Period` | How often the rule runs and how far back it reads, as ISO 8601 durations (`PT30M`, `PT1H`, `P1D`). |
+| `Frequency`, `Period` | How often the rule runs and how far back it reads, as ISO 8601 durations (`PT30M`, `PT1H`, `P1D`). The query must not look back further than the period; write the look-back as `ago(2h)` or as a name set with `let Name = 2h;` so the build can check it. |
 | `Entities` | `Type(Identifier=Column, ...)`, separated by `;`. The columns must be in the query result. |
 | `Custom details` | Result columns shown on the alert, as `Name` or `Name=Column`. |
 | `Incidents` | Optional. `AllEntities, PT5H` (the default), `Entities(Account, IP), PT5H`, `CustomDetails(Name), P1D`, or `none`. |
@@ -155,8 +166,10 @@ says what it is: `MinAccounts`, `ExcludedIPs`, `AllowedActors`, `ManagementParen
 
 - **ID-001, ID-004**: add your egress addresses and the service accounts that still need legacy
   protocols.
-- **PA-001, PA-002, PA-004, AZ-***: add the identities that make approved changes
-  (lower-case, as the lists are compared in lower case).
+- **PA-001, PA-002, PA-004, AZ-***: add the identities that make approved changes. The lists are
+  compared without regard to upper and lower case.
+- **PA-001**: check that the role names in `PrivilegedRoles` are spelt as they appear in your
+  audit log.
 - **EP-004**: add the parent process of your management tooling.
 - **EX-001**: add your backup provider and other expected destinations.
 - **SO-001**: set `WatchedTables` to the tables your enabled rules read.
@@ -176,7 +189,7 @@ Checked:
 - Every table and column name against the Microsoft Learn table reference (copied into
   [../Content_Build/schema/tables.json](../Content_Build/schema/tables.json), October 2026).
 - Every query parsed and analysed with Microsoft's own KQL parser (Kusto.Language) against those
-  schemas, on every push. This catches syntax errors, unknown columns and functions, wrong argument
+  schemas, in CI on every pull request. This catches syntax errors, unknown columns and functions, wrong argument
   counts, and columns used after the stage that removed them.
 - The columns each rule maps to entities and custom details exist in the query result.
 - Rule settings against the Sentinel alert rules API (version 2024-03-01) and the entity mapping
@@ -185,10 +198,14 @@ Checked:
 **Not checked: nothing here has been run in a live workspace.** No query was executed against real
 data and no rule was deployed by the author. That matters in three places:
 
-- **Values inside the data.** Operation names, result codes and action types (for example the
-  Entra audit operation names, the PIM record layout in PA-001, `UsbDriveMounted` fields in EX-002)
-  come from Microsoft's documentation and field experience. A tenant can differ. Step 2 of the
-  deployment exists to find those cases.
+- **Values inside the data.** Operation names, result codes and action types come from Microsoft's
+  documentation and published queries. An independent review confirmed most of them against those
+  sources; a few could not be confirmed and are the first things to check in step 2 of the
+  deployment: the role names in PA-001, the layout of Outlook desktop rule changes
+  (`UpdateInboxRules`) in EM-003, and how your firewall reports byte counts in EX-001.
+- **Arrival delay.** The two and four hour windows are based on documented delays, not measured in
+  your workspace. To measure one:
+  `<Table> | where TimeGenerated > ago(7d) | summarize percentiles(ingestion_time() - TimeGenerated, 50, 95, 99)`.
 - **Thresholds.** They are reasonable starting points, not measurements of your environment.
 - **Deployment.** The templates follow the documented API and the export format; the first
   deployment is the real test.
@@ -196,10 +213,11 @@ data and no rule was deployed by the author. That matters in three places:
 ## Limits
 
 - Scheduled rules only. No near-real-time rules, no anomaly or Fusion rules, no automation rules.
-- Interactive sign-ins only (`SigninLogs`). Non-interactive sign-ins, where legacy authentication
-  and token replay also show up, are not read.
+- ID-001, ID-002 and ID-003 read interactive sign-ins only (`SigninLogs`). Token replay and other
+  activity that shows up only in non-interactive sign-ins is not covered.
 - `EX-001` understands IPv4 addresses. IPv6 traffic is not evaluated.
 - `EM-*` rules need the Defender for Office 365 tables in the workspace. Whether URL click and
   post-delivery events are produced at all depends on your Defender for Office 365 licence.
-- Alerts are matched to rules by name in the workbooks. Renaming a rule in the portal removes it
-  from its workbook's Detections tab.
+- Alerts are matched to rules by name in the workbooks. Renaming a rule in the portal removes its
+  alerts from its workbook's Detections tab; its incidents are still found by the rule identifier.
+- SO-001 and SO-002 report the state of the SOC's own tooling and have no MITRE ATT&CK mapping.

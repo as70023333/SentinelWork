@@ -5,12 +5,13 @@
 // Techniques: T1621
 // Tables: SigninLogs
 // Frequency: PT1H
-// Period: PT2H
+// Period: PT3H
 // Entities: Account(FullName=UserPrincipalName, AadUserId=UserId); IP(Address=IPAddress)
 // Custom details: MfaDenials, FirstDenial, SuccessTime, Application
-// Description: A user's multifactor prompt failed or was denied several times (error 500121) and a
-//   sign-in that required MFA then succeeded. That is the shape of MFA fatigue: an attacker who
-//   already has the password sends prompts until the user approves one.
+// Description: A user's multifactor prompt failed or was denied several times (error 500121) and,
+//   within the hour after those denials, a sign-in that required MFA succeeded. That is the shape of
+//   MFA fatigue: an attacker who already has the password sends prompts until the user approves one.
+//   Only denials before the successful sign-in are counted.
 // False positives: A user who mistypes a code or ignores prompts on a new phone and then gets it
 //   right. Those cases usually show one address and one device throughout.
 // Tuning: Raise MinDenials if users often fail MFA. Number matching in Microsoft Authenticator
@@ -21,22 +22,25 @@
 // References: https://learn.microsoft.com/entra/identity/authentication/how-to-mfa-number-match
 let MinDenials = 5;
 let Denials = SigninLogs
-    | where TimeGenerated > ago(2h)
+    | where TimeGenerated > ago(3h)
     | where ResultType == "500121"
-    | summarize MfaDenials = count(),
-                FirstDenial = min(TimeGenerated),
-                LastDenial = max(TimeGenerated),
-                DenialAddresses = make_set(IPAddress, 10),
-                DenialReasons = make_set(ResultDescription, 5)
-                by UserId
-    | where MfaDenials >= MinDenials;
+    | project UserId, DenialTime = TimeGenerated, DenialAddress = IPAddress, DenialReason = ResultDescription;
 SigninLogs
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where ResultType == "0" and AuthenticationRequirement == "multiFactorAuthentication"
+| project SuccessTime = TimeGenerated, UserId, UserPrincipalName, IPAddress, Country = Location,
+          Application = AppDisplayName
 | join kind=inner Denials on UserId
-| where TimeGenerated > FirstDenial
-| summarize arg_min(TimeGenerated, UserPrincipalName, IPAddress, Location, AppDisplayName, MfaDenials, FirstDenial,
-                    LastDenial, DenialAddresses, DenialReasons)
-            by UserId
-| project SuccessTime = TimeGenerated, UserPrincipalName, UserId, IPAddress, Country = Location,
-          Application = AppDisplayName, MfaDenials, FirstDenial, LastDenial, DenialAddresses, DenialReasons
+| where DenialTime < SuccessTime and DenialTime > SuccessTime - 1h
+| summarize MfaDenials = count(),
+            FirstDenial = min(DenialTime),
+            LastDenial = max(DenialTime),
+            DenialAddresses = make_set(DenialAddress, 10),
+            DenialReasons = make_set(DenialReason, 5)
+            by UserId, UserPrincipalName, SuccessTime, IPAddress, Country, Application
+| where MfaDenials >= MinDenials
+| summarize arg_min(SuccessTime, *) by UserId
+| project SuccessTime, UserPrincipalName, UserId, IPAddress, Country, Application, MfaDenials, FirstDenial,
+          LastDenial, DenialAddresses, DenialReasons

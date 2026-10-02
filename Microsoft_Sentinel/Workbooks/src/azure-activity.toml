@@ -123,19 +123,37 @@ AzureActivity
 | order by TimeGenerated desc
 | take 500
 '''
+rows = 500
 
 [[tab.item]]
 kind = "barchart"
-title = "Sensitive operations by caller"
+title = "The same operations, by caller"
 width = 50
 query = '''
+let Sensitive = datatable(Operation:string, Meaning:string) [
+    "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE", "Role assigned",
+    "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE", "Role assignment removed",
+    "MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/WRITE", "Custom role created or changed",
+    "MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION", "Global Administrator elevated to User Access Administrator",
+    "MICROSOFT.AUTHORIZATION/LOCKS/DELETE", "Resource lock removed",
+    "MICROSOFT.AUTHORIZATION/POLICYASSIGNMENTS/DELETE", "Policy assignment removed",
+    "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/DELETE", "Diagnostic setting deleted",
+    "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE", "Diagnostic setting changed",
+    "MICROSOFT.OPERATIONALINSIGHTS/WORKSPACES/DELETE", "Log Analytics workspace deleted",
+    "MICROSOFT.SECURITYINSIGHTS/ALERTRULES/DELETE", "Sentinel analytics rule deleted",
+    "MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/WRITE", "Network security group rule changed",
+    "MICROSOFT.NETWORK/PUBLICIPADDRESSES/WRITE", "Public IP address created or changed",
+    "MICROSOFT.KEYVAULT/VAULTS/ACCESSPOLICIES/WRITE", "Key vault access policy changed",
+    "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION", "Storage account keys listed",
+    "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION", "Run Command on a virtual machine",
+    "MICROSOFT.COMPUTE/VIRTUALMACHINES/EXTENSIONS/WRITE", "Virtual machine extension installed",
+    "MICROSOFT.COMPUTE/DISKS/BEGINGETACCESS/ACTION", "Disk export (SAS) started",
+    "MICROSOFT.COMPUTE/SNAPSHOTS/WRITE", "Disk snapshot created"
+];
 AzureActivity
 | where ActivityStatusValue =~ "Success"
-| where OperationNameValue startswith "MICROSOFT.AUTHORIZATION/"
-    or OperationNameValue startswith "MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/"
-    or OperationNameValue has "RUNCOMMAND"
-    or OperationNameValue has "LISTKEYS"
-| where OperationNameValue !endswith "/READ"
+| extend Operation = toupper(OperationNameValue)
+| join kind=inner Sensitive on Operation
 | summarize Operations = count() by Caller
 | top 15 by Operations desc
 '''
@@ -175,6 +193,7 @@ AzureActivity
             Examples = strcat_array(make_set(OperationNameValue, 5), ", "),
             LastSeen = max(TimeGenerated)
             by Caller, Address = CallerIpAddress
+| where Refused > 0
 | top 50 by Refused desc
 '''
 

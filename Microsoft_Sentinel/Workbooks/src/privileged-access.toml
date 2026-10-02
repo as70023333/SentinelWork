@@ -24,16 +24,21 @@ value = "Value"
 query = '''
 AuditLogs
 | where Result =~ "success"
-| summarize RoleChanges = countif(Category =~ "RoleManagement" and OperationName has "member"),
+// A change made through PIM is written twice: by PIM and, as a copy, by the directory. The copy is left out.
+| extend RoleChange = (Category =~ "RoleManagement" and (
+                (LoggedByService =~ "Core Directory" and OperationName has "member"
+                 and tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax"))
+                or (LoggedByService =~ "PIM" and OperationName has "completed")))
+| summarize RoleChanges = countif(RoleChange),
             AppCredentials = countif(OperationName has "Certificates and secrets management"
                                      or OperationName has "service principal credentials"),
             Grants = countif(OperationName in~ ("Consent to application", "Add app role assignment to service principal",
                                                 "Add delegated permission grant")),
             PolicyChanges = countif(OperationName has "conditional access policy"),
             SecurityInfo = countif(OperationName has "security info"),
-            AdminResets = countif(OperationName in~ ("Reset user password", "Reset password (by admin)"))
+            AdminResets = countif(OperationName =~ "Reset user password")
 | project Tiles = pack_array(
-    bag_pack("Metric", "Role membership changes", "Value", RoleChanges),
+    bag_pack("Metric", "Role assignments and PIM activations", "Value", RoleChanges),
     bag_pack("Metric", "Application credential changes", "Value", AppCredentials),
     bag_pack("Metric", "Consents and permission grants", "Value", Grants),
     bag_pack("Metric", "Conditional Access policy changes", "Value", PolicyChanges),
@@ -49,13 +54,17 @@ title = "Privileged changes over time, by type"
 query = '''
 AuditLogs
 | where Result =~ "success"
+| extend RoleChange = (Category =~ "RoleManagement" and (
+                (LoggedByService =~ "Core Directory" and OperationName has "member"
+                 and tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax"))
+                or (LoggedByService =~ "PIM" and OperationName has "completed")))
 | extend Change = case(
-    Category =~ "RoleManagement" and OperationName has "member", "Role membership",
+    RoleChange, "Role assignments and activations",
     OperationName has "Certificates and secrets management" or OperationName has "service principal credentials", "Application credentials",
     OperationName in~ ("Consent to application", "Add app role assignment to service principal", "Add delegated permission grant"), "Consents and permissions",
     OperationName has "conditional access policy", "Conditional Access",
     OperationName has "security info", "Security info",
-    OperationName in~ ("Reset user password", "Reset password (by admin)"), "Admin password resets",
+    OperationName =~ "Reset user password", "Admin password resets",
     "")
 | where isnotempty(Change)
 | summarize Changes = count() by bin(TimeGenerated, {TimeRange:grain}), Change
@@ -63,18 +72,22 @@ AuditLogs
 
 [[tab.item]]
 kind = "table"
-title = "Who made privileged changes"
+title = "Who made privileged changes (security info changes not included)"
 width = 60
 bars = ["Changes"]
 query = '''
 AuditLogs
 | where Result =~ "success"
+| extend RoleChange = (Category =~ "RoleManagement" and (
+                (LoggedByService =~ "Core Directory" and OperationName has "member"
+                 and tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax"))
+                or (LoggedByService =~ "PIM" and OperationName has "completed")))
 | extend Change = case(
-    Category =~ "RoleManagement" and OperationName has "member", "Role membership",
+    RoleChange, "Role assignments and activations",
     OperationName has "Certificates and secrets management" or OperationName has "service principal credentials", "Application credentials",
     OperationName in~ ("Consent to application", "Add app role assignment to service principal", "Add delegated permission grant"), "Consents and permissions",
     OperationName has "conditional access policy", "Conditional Access",
-    OperationName in~ ("Reset user password", "Reset password (by admin)"), "Admin password resets",
+    OperationName =~ "Reset user password", "Admin password resets",
     "")
 | where isnotempty(Change)
 | extend Actor = coalesce(tostring(InitiatedBy.user.userPrincipalName), tostring(InitiatedBy.app.displayName), "unknown")
@@ -112,6 +125,8 @@ query = '''
 AuditLogs
 | where LoggedByService =~ "Core Directory" and Category =~ "RoleManagement" and Result =~ "success"
 | where OperationName has "member"
+// Changes made through PIM are in the next table.
+| where tostring(InitiatedBy.app.displayName) !in~ ("MS-PIM", "MS-PIM-Fairfax")
 | mv-apply Property = TargetResources[0].modifiedProperties on (
     where tostring(Property.displayName) == "Role.DisplayName"
     | project Role = trim(@'"', coalesce(tostring(Property.newValue), tostring(Property.oldValue))))
@@ -145,7 +160,7 @@ AuditLogs
 
 [[tab.item]]
 kind = "barchart"
-title = "Roles granted most often"
+title = "Roles granted or activated most often through PIM"
 query = '''
 AuditLogs
 | where LoggedByService =~ "PIM" and Category =~ "RoleManagement" and Result =~ "success"
@@ -201,7 +216,7 @@ width = 50
 query = '''
 AuditLogs
 | where Result =~ "success"
-| where OperationName has "security info" or OperationName in~ ("Reset user password", "Reset password (by admin)")
+| where OperationName has "security info" or OperationName =~ "Reset user password"
 | project TimeGenerated,
           Operation = OperationName,
           Account = coalesce(tostring(TargetResources[0].userPrincipalName), tostring(TargetResources[0].displayName)),

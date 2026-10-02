@@ -6,7 +6,7 @@
 // Sub-techniques: T1556.009
 // Tables: AuditLogs
 // Frequency: PT1H
-// Period: PT1H
+// Period: PT2H
 // Entities: Account(FullName=Actor); IP(Address=ActorIP)
 // Custom details: PolicyName, Change, Operation
 // Description: A Conditional Access policy was updated or deleted. These policies are what enforce
@@ -21,7 +21,9 @@
 // References: https://learn.microsoft.com/entra/identity/conditional-access/overview
 let AllowedActors = dynamic([]);
 AuditLogs
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where Category =~ "Policy" and Result =~ "success"
 | where OperationName in~ ("Update conditional access policy", "Delete conditional access policy")
 | extend PolicyName = tostring(TargetResources[0].displayName),
@@ -33,6 +35,6 @@ AuditLogs
 | extend Change = case(OperationName =~ "Delete conditional access policy", "Policy deleted",
                        OldState =~ "enabled" and NewState !~ "enabled", "Policy switched off or set to report-only",
                        "Policy settings edited")
-| where tolower(Actor) !in (AllowedActors)
+| where Actor !in~ (AllowedActors)
 | project TimeGenerated, PolicyName, PolicyId, Change, OldState, NewState, Operation = OperationName, Actor, ActorIP,
           CorrelationId

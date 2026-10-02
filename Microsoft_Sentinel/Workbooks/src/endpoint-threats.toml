@@ -38,7 +38,7 @@ DeviceEvents
     bag_pack("Metric", "Devices with a detection", "Value", DevicesWithDetection),
     bag_pack("Metric", "ASR rule blocks", "Value", AsrBlocked),
     bag_pack("Metric", "ASR rule audits (not blocked)", "Value", AsrAudited),
-    bag_pack("Metric", "Web and network protection blocks", "Value", NetworkBlocked),
+    bag_pack("Metric", "Web and network protection blocks and warnings", "Value", NetworkBlocked),
     bag_pack("Metric", "Tampering attempts", "Value", Tampering))
 | mv-expand Tile = Tiles
 | project Metric = tostring(Tile.Metric), Value = tolong(Tile.Value)
@@ -53,7 +53,7 @@ DeviceEvents
     ActionType == "AntivirusDetection", "Antivirus detection",
     ActionType startswith "Asr" and ActionType endswith "Blocked", "ASR block",
     ActionType startswith "Asr" and ActionType endswith "Audited", "ASR audit",
-    ActionType in ("ExploitGuardNetworkProtectionBlocked", "SmartScreenUrlWarning"), "Web or network block",
+    ActionType in ("ExploitGuardNetworkProtectionBlocked", "SmartScreenUrlWarning"), "Web or network block or warning",
     ActionType == "TamperingAttempt", "Tampering attempt",
     "")
 | where isnotempty(Event)
@@ -87,9 +87,10 @@ heat = ["Audited"]
 query = '''
 DeviceEvents
 | where ActionType startswith "Asr"
-| extend AsrRule = replace_regex(ActionType, @"(Blocked|Audited|Warned)$", "")
+| extend AsrRule = replace_regex(ActionType, @"(Blocked|Audited|WarnBypassed)$", "")
 | summarize Blocked = countif(ActionType endswith "Blocked"),
             Audited = countif(ActionType endswith "Audited"),
+            WarningBypassed = countif(ActionType endswith "WarnBypassed"),
             Devices = dcount(DeviceId),
             LastSeen = max(TimeGenerated)
             by AsrRule
@@ -159,11 +160,11 @@ DeviceNetworkEvents
 
 [[tab.item]]
 kind = "table"
-title = "New programs set to run at sign-in (Run and RunOnce keys)"
+title = "Programs set to run at sign-in (Run and RunOnce keys)"
 query = '''
 DeviceRegistryEvents
 | where ActionType == "RegistryValueSet"
-| where RegistryKey has @"CurrentVersion\Run"
+| where RegistryKey matches regex @"(?i)\\CurrentVersion\\Run(Once)?$"
 | summarize Devices = dcount(DeviceId),
             FirstSeen = min(TimeGenerated),
             LastSeen = max(TimeGenerated),

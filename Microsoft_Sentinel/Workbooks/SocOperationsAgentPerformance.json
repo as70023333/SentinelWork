@@ -4,7 +4,7 @@
     {
       "type": 1,
       "content": {
-        "json": "# SOC Operations and Agent Performance\n\nThe incident queue as a whole. **Overview** answers \"are we keeping up\": how many incidents, how\nfast they are acknowledged and closed, and how they were classified. **Rules** shows which rules\ncost the most time for the least result. **Agent** shows what the Autonomous SOC Analyst did, read\nfrom the labels it writes on each incident (`soc-agent`, `soc-agent:<disposition>`,\n`soc-agent:class:<alert class>`). **Health** shows whether the tables are still receiving data and\nwhether any rule is failing.\n\nTimes: *acknowledge* is creation to first change of the incident; *close* is creation to closure.\nThe rule failure table needs Sentinel health monitoring switched on (Settings, Auditing and health\nmonitoring); without it the table is empty.\n\n**Tables read:** `SecurityIncident`, `SecurityAlert`, `Usage` and, when present, `SentinelHealth`. A tile or chart for a table you do not collect shows an error; the rest still works."
+        "json": "# SOC Operations and Agent Performance\n\nThe incident queue as a whole. **Overview** answers \"are we keeping up\": how many incidents, how\nfast they are acknowledged and closed, and how they were classified. **Rules** shows which rules\ncost the most time for the least result. **Agent** shows what the Autonomous SOC Analyst did, read\nfrom the labels it writes on each incident (`soc-agent`, `soc-agent:<disposition>`,\n`soc-agent:class:<alert class>`). **Health** shows whether the tables are still receiving data and\nwhether any rule is failing.\n\nNumbers are for incidents **created** in the time range, in their latest state. The two items about\nwhat is open right now ignore the time range and look back 90 days, so an old incident nobody has\ntouched is not hidden. Times: *acknowledge* is creation to first change of the incident; *close* is\ncreation to closure. The rule failure table needs Sentinel health monitoring switched on (Settings,\nAuditing and health monitoring); without it the table is empty.\n\n**Tables read:** `SecurityIncident`, `SecurityAlert`, `Usage` and, when present, `SentinelHealth`. A tile or chart for a table you do not collect shows an error; the rest still works."
       },
       "name": "introduction"
     },
@@ -129,9 +129,9 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Created = count(),\r\n            Open = countif(Status != \"Closed\"),\r\n            OpenHigh = countif(Status != \"Closed\" and Severity == \"High\"),\r\n            Closed = countif(Status == \"Closed\"),\r\n            MinutesToAcknowledge = avgif(datetime_diff(\"minute\", FirstModifiedTime, CreatedTime), isnotnull(FirstModifiedTime)),\r\n            MinutesToClose = avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            NotThreats = countif(Classification in (\"FalsePositive\", \"BenignPositive\"))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Incidents\", \"Value\", Created),\r\n    bag_pack(\"Metric\", \"Open\", \"Value\", Open),\r\n    bag_pack(\"Metric\", \"Open, high severity\", \"Value\", OpenHigh),\r\n    bag_pack(\"Metric\", \"Closed\", \"Value\", Closed),\r\n    bag_pack(\"Metric\", \"Mean minutes to acknowledge\", \"Value\", round(MinutesToAcknowledge, 1)),\r\n    bag_pack(\"Metric\", \"Mean hours to close\", \"Value\", round(MinutesToClose / 60.0, 1)),\r\n    bag_pack(\"Metric\", \"True positive % of closed\", \"Value\", iff(Closed > 0, round(100.0 * TruePositives / Closed, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"False or benign positive % of closed\", \"Value\", iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), 0.0)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| summarize Created = count(),\r\n            Closed = countif(Status == \"Closed\"),\r\n            Acknowledged = countif(isnotnull(FirstModifiedTime)),\r\n            MinutesToAcknowledge = avgif((FirstModifiedTime - CreatedTime) / 1m, isnotnull(FirstModifiedTime)),\r\n            HoursToClose = avgif((ClosedTime - CreatedTime) / 1h, Status == \"Closed\" and isnotnull(ClosedTime)),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            NotThreats = countif(Classification in (\"FalsePositive\", \"BenignPositive\"))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Incidents created\", \"Value\", Created),\r\n    bag_pack(\"Metric\", \"Of those, closed\", \"Value\", Closed),\r\n    bag_pack(\"Metric\", \"Mean minutes to acknowledge\", \"Value\", iff(Acknowledged > 0, round(MinutesToAcknowledge, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"Mean hours to close\", \"Value\", iff(Closed > 0, round(HoursToClose, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"True positive % of closed\", \"Value\", iff(Closed > 0, round(100.0 * TruePositives / Closed, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"False or benign positive % of closed\", \"Value\", iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), 0.0)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
               "size": 4,
-              "title": "Incidents in the time range",
+              "title": "Incidents created in the time range",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
                 "durationMs": 0
@@ -172,7 +172,49 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Severity",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Status != \"Closed\"\r\n| summarize OpenNow = count(),\r\n            OpenHigh = countif(Severity == \"High\"),\r\n            Unassigned = countif(isempty(tostring(Owner.assignedTo))),\r\n            OldestDays = max((now() - CreatedTime) / 1d)\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Open incidents\", \"Value\", OpenNow),\r\n    bag_pack(\"Metric\", \"Open, high severity\", \"Value\", OpenHigh),\r\n    bag_pack(\"Metric\", \"Open with no owner\", \"Value\", Unassigned),\r\n    bag_pack(\"Metric\", \"Age of the oldest open incident (days)\", \"Value\", iff(OpenNow > 0, round(OldestDays, 1), 0.0)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
+              "size": 4,
+              "title": "Open right now (any incident from the last 90 days)",
+              "noDataMessage": "No data in the selected time range.",
+              "timeContext": {
+                "durationMs": 7776000000
+              },
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "Metric",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "Value",
+                  "formatter": 12,
+                  "formatOptions": {
+                    "palette": "auto"
+                  },
+                  "numberFormat": {
+                    "unit": 17,
+                    "options": {
+                      "maximumSignificantDigits": 3,
+                      "maximumFractionDigits": 2
+                    }
+                  }
+                },
+                "showBorder": true
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-2",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Severity",
               "size": 0,
               "title": "Incidents created over time, by severity",
               "noDataMessage": "No data in the selected time range.",
@@ -205,7 +247,7 @@
               }
             },
             "customWidth": "60",
-            "name": "overview-2",
+            "name": "overview-3",
             "styleSettings": {
               "showBorder": true
             }
@@ -214,7 +256,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Status == \"Closed\"\r\n| summarize Incidents = count() by Classification = iff(isempty(Classification), \"Undetermined\", Classification)",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start} and Status == \"Closed\"\r\n| summarize Incidents = count() by Classification = iff(isempty(Classification), \"Undetermined\", Classification)",
               "size": 0,
               "title": "How closed incidents were classified",
               "noDataMessage": "No data in the selected time range.",
@@ -247,7 +289,7 @@
               }
             },
             "customWidth": "40",
-            "name": "overview-3",
+            "name": "overview-4",
             "styleSettings": {
               "showBorder": true
             }
@@ -256,7 +298,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Incidents = count(),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            MeanMinutesToAcknowledge = round(avgif(datetime_diff(\"minute\", FirstModifiedTime, CreatedTime), isnotnull(FirstModifiedTime)), 1),\r\n            MeanHoursToClose = round(avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)) / 60.0, 1)\r\n            by Severity\r\n| extend Position = case(Severity == \"High\", 1, Severity == \"Medium\", 2, Severity == \"Low\", 3, 4)\r\n| order by Position asc\r\n| project Severity, Incidents, StillOpen, MeanMinutesToAcknowledge, MeanHoursToClose",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| summarize Incidents = count(),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            MinutesToAcknowledge = avgif((FirstModifiedTime - CreatedTime) / 1m, isnotnull(FirstModifiedTime)),\r\n            HoursToClose = avgif((ClosedTime - CreatedTime) / 1h, Status == \"Closed\" and isnotnull(ClosedTime))\r\n            by Severity\r\n| extend Position = case(Severity == \"High\", 1, Severity == \"Medium\", 2, Severity == \"Low\", 3, 4)\r\n| order by Position asc\r\n| project Severity, Incidents, StillOpen,\r\n          MeanMinutesToAcknowledge = iff(isnan(MinutesToAcknowledge), real(null), round(MinutesToAcknowledge, 1)),\r\n          MeanHoursToClose = iff(isnan(HoursToClose), real(null), round(HoursToClose, 1))",
               "size": 0,
               "title": "Response times by severity",
               "noDataMessage": "No data in the selected time range.",
@@ -291,7 +333,7 @@
               }
             },
             "customWidth": "40",
-            "name": "overview-4",
+            "name": "overview-5",
             "styleSettings": {
               "showBorder": true
             }
@@ -300,14 +342,13 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Status != \"Closed\"\r\n| extend Position = case(Severity == \"High\", 1, Severity == \"Medium\", 2, Severity == \"Low\", 3, 4),\r\n         LabelText = tostring(Labels)\r\n| order by Position asc, CreatedTime asc\r\n| project IncidentNumber, Title, Severity, Status,\r\n          AgeHours = datetime_diff(\"hour\", now(), CreatedTime),\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          Agent = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText),\r\n          IncidentUrl\r\n| take 250",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Status != \"Closed\"\r\n| extend Position = case(Severity == \"High\", 1, Severity == \"Medium\", 2, Severity == \"Low\", 3, 4),\r\n         LabelText = tostring(Labels)\r\n| order by Position asc, CreatedTime asc\r\n| project IncidentNumber, Title, Severity, Status,\r\n          AgeHours = toint((now() - CreatedTime) / 1h),\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          Agent = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText),\r\n          IncidentUrl\r\n| take 250",
               "size": 0,
-              "title": "Open incidents, oldest first within each severity",
+              "title": "Open incidents from the last 90 days, oldest first within each severity",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
-                "durationMs": 0
+                "durationMs": 7776000000
               },
-              "timeContextFromParameter": "TimeRange",
               "queryType": 0,
               "resourceType": "microsoft.operationalinsights/workspaces",
               "visualization": "table",
@@ -374,7 +415,7 @@
               }
             },
             "customWidth": "60",
-            "name": "overview-5",
+            "name": "overview-6",
             "styleSettings": {
               "showBorder": true
             }
@@ -398,7 +439,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| summarize Incidents = count(),\r\n            Closed = countif(Status == \"Closed\"),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            NotThreats = countif(Classification in (\"FalsePositive\", \"BenignPositive\")),\r\n            MeanHoursToClose = round(avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)) / 60.0, 1),\r\n            Provider = take_any(ProviderName)\r\n            by Rule = Title\r\n| extend NotThreatPercent = iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), real(null))\r\n| project Rule, Incidents, Closed, TruePositives, NotThreats, NotThreatPercent, MeanHoursToClose, Provider\r\n| top 50 by Incidents desc",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| summarize Incidents = count(),\r\n            Closed = countif(Status == \"Closed\"),\r\n            TruePositives = countif(Classification == \"TruePositive\"),\r\n            NotThreats = countif(Classification in (\"FalsePositive\", \"BenignPositive\")),\r\n            HoursToClose = avgif((ClosedTime - CreatedTime) / 1h, Status == \"Closed\" and isnotnull(ClosedTime)),\r\n            Provider = take_any(ProviderName)\r\n            by Rule = Title\r\n| project Rule, Incidents, Closed, TruePositives, NotThreats,\r\n          NotThreatPercent = iff(Closed > 0, round(100.0 * NotThreats / Closed, 1), real(null)),\r\n          MeanHoursToClose = iff(isnan(HoursToClose), real(null), round(HoursToClose, 1)),\r\n          Provider\r\n| top 50 by Incidents desc",
               "size": 0,
               "title": "Incidents by rule: volume against result",
               "noDataMessage": "No data in the selected time range.",
@@ -484,7 +525,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend AssignedTo = tostring(Owner.assignedTo)\r\n| where isnotempty(AssignedTo)\r\n| summarize Closed = countif(Status == \"Closed\"),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            MeanHoursToClose = round(avgif(datetime_diff(\"minute\", ClosedTime, CreatedTime), Status == \"Closed\" and isnotnull(ClosedTime)) / 60.0, 1)\r\n            by AssignedTo\r\n| top 50 by Closed desc",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| extend AssignedTo = tostring(Owner.assignedTo)\r\n| where isnotempty(AssignedTo)\r\n| summarize Closed = countif(Status == \"Closed\"),\r\n            StillOpen = countif(Status != \"Closed\"),\r\n            HoursToClose = avgif((ClosedTime - CreatedTime) / 1h, Status == \"Closed\" and isnotnull(ClosedTime))\r\n            by AssignedTo\r\n| project AssignedTo, Closed, StillOpen, MeanHoursToClose = iff(isnan(HoursToClose), real(null), round(HoursToClose, 1))\r\n| top 50 by Closed desc",
               "size": 0,
               "title": "Work closed by each owner",
               "noDataMessage": "No data in the selected time range.",
@@ -543,9 +584,9 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend LabelText = tostring(Labels)\r\n| extend Handled = LabelText has \"soc-agent\",\r\n         Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText)\r\n| summarize Incidents = count(),\r\n            HandledByAgent = countif(Handled),\r\n            AutoClosed = countif(Disposition == \"auto_close\"),\r\n            Paged = countif(Disposition == \"page\"),\r\n            Queued = countif(Disposition == \"queue\"),\r\n            Pending = countif(Disposition == \"pending\"),\r\n            MinutesToVerdict = avgif(datetime_diff(\"second\", FirstModifiedTime, CreatedTime) / 60.0, Handled and isnotnull(FirstModifiedTime))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Incidents the agent processed\", \"Value\", HandledByAgent),\r\n    bag_pack(\"Metric\", \"% of all incidents\", \"Value\", iff(Incidents > 0, round(100.0 * HandledByAgent / Incidents, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"Closed by the agent\", \"Value\", AutoClosed),\r\n    bag_pack(\"Metric\", \"Escalated to a person at once\", \"Value\", Paged),\r\n    bag_pack(\"Metric\", \"Left in the queue\", \"Value\", Queued),\r\n    bag_pack(\"Metric\", \"Waiting for evidence\", \"Value\", Pending),\r\n    bag_pack(\"Metric\", \"Mean minutes from creation to first agent update\", \"Value\", round(MinutesToVerdict, 2)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| extend LabelText = tostring(Labels)\r\n| extend Handled = LabelText has \"soc-agent\",\r\n         Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText)\r\n| summarize Incidents = count(),\r\n            HandledByAgent = countif(Handled),\r\n            AutoClosed = countif(Disposition == \"auto_close\"),\r\n            Paged = countif(Disposition == \"page\"),\r\n            Queued = countif(Disposition == \"queue\"),\r\n            Pending = countif(Disposition == \"pending\"),\r\n            Timed = countif(Handled and isnotnull(FirstModifiedTime)),\r\n            MinutesToFirstUpdate = avgif((FirstModifiedTime - CreatedTime) / 1m, Handled and isnotnull(FirstModifiedTime))\r\n| project Tiles = pack_array(\r\n    bag_pack(\"Metric\", \"Incidents the agent processed\", \"Value\", HandledByAgent),\r\n    bag_pack(\"Metric\", \"% of all incidents\", \"Value\", iff(Incidents > 0, round(100.0 * HandledByAgent / Incidents, 1), 0.0)),\r\n    bag_pack(\"Metric\", \"Closed by the agent\", \"Value\", AutoClosed),\r\n    bag_pack(\"Metric\", \"Escalated to a person at once\", \"Value\", Paged),\r\n    bag_pack(\"Metric\", \"Left in the queue\", \"Value\", Queued),\r\n    bag_pack(\"Metric\", \"Waiting for evidence\", \"Value\", Pending),\r\n    bag_pack(\"Metric\", \"Mean minutes from creation to first update\", \"Value\", iff(Timed > 0, round(MinutesToFirstUpdate, 2), 0.0)))\r\n| mv-expand Tile = Tiles\r\n| project Metric = tostring(Tile.Metric), Value = todouble(Tile.Value)",
               "size": 4,
-              "title": "What the agent did",
+              "title": "What the agent did with incidents created in the time range",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
                 "durationMs": 0
@@ -586,7 +627,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, tostring(Labels))\r\n| where isnotempty(Disposition)\r\n| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Disposition",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| extend Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, tostring(Labels))\r\n| where isnotempty(Disposition)\r\n| summarize Incidents = count() by bin(CreatedTime, {TimeRange:grain}), Disposition",
               "size": 0,
               "title": "Agent decisions over time",
               "noDataMessage": "No data in the selected time range.",
@@ -628,7 +669,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| extend LabelText = tostring(Labels)\r\n| extend AlertClass = extract(@\"soc-agent:class:([A-Za-z0-9_\\-]+)\", 1, LabelText),\r\n         Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText)\r\n| where isnotempty(AlertClass)\r\n| summarize Incidents = count(),\r\n            AutoClosed = countif(Disposition == \"auto_close\"),\r\n            Paged = countif(Disposition == \"page\"),\r\n            Queued = countif(Disposition == \"queue\")\r\n            by AlertClass\r\n| order by Incidents desc",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| extend LabelText = tostring(Labels)\r\n| extend AlertClass = extract(@\"soc-agent:class:([A-Za-z0-9_\\-]+)\", 1, LabelText),\r\n         Disposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText)\r\n| where isnotempty(AlertClass)\r\n| summarize Incidents = count(),\r\n            AutoClosed = countif(Disposition == \"auto_close\"),\r\n            Paged = countif(Disposition == \"page\"),\r\n            Queued = countif(Disposition == \"queue\")\r\n            by AlertClass\r\n| order by Incidents desc",
               "size": 0,
               "title": "Alert classes the agent saw",
               "noDataMessage": "No data in the selected time range.",
@@ -664,7 +705,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where tostring(Labels) has \"soc-agent:auto_close\"\r\n| project ClosedTime, IncidentNumber, Title, Severity, Status, Classification, Reason = ClassificationReason,\r\n          Comment = ClassificationComment, IncidentUrl\r\n| order by ClosedTime desc\r\n| take 250",
+              "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where CreatedTime >= {TimeRange:start}\r\n| where tostring(Labels) has \"soc-agent:auto_close\"\r\n| project ClosedTime, IncidentNumber, Title, Severity, Status, Classification, Reason = ClassificationReason,\r\n          Comment = ClassificationComment, IncidentUrl\r\n| order by ClosedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents the agent closed",
               "noDataMessage": "No data in the selected time range.",
@@ -729,7 +770,7 @@
                 "rowLimit": 250
               }
             },
-            "customWidth": "60",
+            "customWidth": "100",
             "name": "agent-5",
             "styleSettings": {
               "showBorder": true
@@ -741,12 +782,11 @@
               "version": "KqlItem/1.0",
               "query": "SecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where tostring(Labels) has \"soc-agent:auto_close\" and Status != \"Closed\"\r\n| project LastModifiedTime, IncidentNumber, Title, Severity, Status, ModifiedBy, AssignedTo = tostring(Owner.assignedTo),\r\n          IncidentUrl\r\n| order by LastModifiedTime desc\r\n| take 250",
               "size": 0,
-              "title": "Closed by the agent and open again: decisions a person reversed",
+              "title": "Closed by the agent and open again: decisions a person reversed (last 90 days)",
               "noDataMessage": "No incident the agent closed has been reopened.",
               "timeContext": {
-                "durationMs": 0
+                "durationMs": 7776000000
               },
-              "timeContextFromParameter": "TimeRange",
               "queryType": 0,
               "resourceType": "microsoft.operationalinsights/workspaces",
               "visualization": "table",
@@ -829,14 +869,13 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "Usage\r\n| summarize LastRecord = max(TimeGenerated), MB = round(sum(Quantity), 1), Billable = take_any(IsBillable) by Table = DataType\r\n| extend HoursSinceLastRecord = datetime_diff(\"hour\", now(), LastRecord)\r\n| project Table, LastRecord, HoursSinceLastRecord, MB, Billable\r\n| order by HoursSinceLastRecord desc, MB desc",
+              "query": "Usage\r\n| summarize LastRecord = max(TimeGenerated), MB = round(sum(Quantity), 1), Billable = take_any(IsBillable) by Table = DataType\r\n| extend HoursSinceLastRecord = toint((now() - LastRecord) / 1h)\r\n| project Table, LastRecord, HoursSinceLastRecord, MB, Billable\r\n| order by HoursSinceLastRecord desc, MB desc",
               "size": 0,
-              "title": "When each table last received data",
+              "title": "When each table last received data (last 30 days)",
               "noDataMessage": "No data in the selected time range.",
               "timeContext": {
-                "durationMs": 0
+                "durationMs": 2592000000
               },
-              "timeContextFromParameter": "TimeRange",
               "queryType": 0,
               "resourceType": "microsoft.operationalinsights/workspaces",
               "visualization": "table",
@@ -937,7 +976,7 @@
           {
             "type": 1,
             "content": {
-              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here."
+              "json": "These are the detection rules in this repository for this area (`Detection-rules/` in SentinelWork). A rule with 0 alerts is either not deployed, not enabled, or has had nothing to report in the time range. Alerts are matched to rules by name, so a rule you rename in Sentinel stops being counted here. Incidents are matched by rule name or by the rule's identifier, so they survive a rename."
             },
             "customWidth": "100",
             "name": "detections-1"
@@ -946,7 +985,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"SO-001\", \"Log source stopped sending data\", \"Medium\", \"DefenseEvasion\",\r\n    \"SO-002\", \"Analytics rule is failing to run\", \"Medium\", \"DefenseEvasion\",\r\n    \"SO-003\", \"High severity incident not picked up within 30 minutes\", \"Medium\", \"Operational\",\r\n    \"SO-004\", \"One rule is creating an excessive number of incidents\", \"Low\", \"Operational\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
+              "query": "let Rules = datatable(RuleId:string, AlertName:string, RuleSeverity:string, Tactics:string) [\r\n    \"SO-001\", \"Log source stopped sending data\", \"Medium\", \"Operational\",\r\n    \"SO-002\", \"Analytics rule is failing to run\", \"Medium\", \"Operational\",\r\n    \"SO-003\", \"High severity incident not picked up within 30 minutes\", \"Medium\", \"Operational\",\r\n    \"SO-004\", \"One rule is creating an excessive number of incidents\", \"Low\", \"Operational\"\r\n];\r\nlet AlertCounts = SecurityAlert\r\n    | summarize arg_max(TimeGenerated, AlertName) by SystemAlertId\r\n    | summarize AlertCount = count(), LastAlert = max(TimeGenerated) by AlertName;\r\nRules\r\n| join kind=leftouter AlertCounts on AlertName\r\n| project RuleId, Rule = AlertName, Severity = RuleSeverity, Tactics, Alerts = coalesce(AlertCount, 0), LastAlert\r\n| order by RuleId asc",
               "size": 0,
               "title": "Rule coverage",
               "noDataMessage": "No rules are defined for this area.",
@@ -1110,7 +1149,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let RuleNames = dynamic([\"Log source stopped sending data\", \"Analytics rule is failing to run\", \"High severity incident not picked up within 30 minutes\", \"One rule is creating an excessive number of incidents\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
+              "query": "let RuleNames = dynamic([\"Log source stopped sending data\", \"Analytics rule is failing to run\", \"High severity incident not picked up within 30 minutes\", \"One rule is creating an excessive number of incidents\"]);\r\nlet RuleIds = dynamic([\"8204712f-689f-5cbc-acfd-610ef64f7607\", \"45522bae-6442-5b82-af7d-ff4e08bf9a80\", \"1ebfe3aa-7f02-57eb-9276-6a981436c750\", \"007a92c7-8c46-5371-b632-852f6df62c25\"]);\r\nSecurityIncident\r\n| summarize arg_max(TimeGenerated, *) by IncidentNumber\r\n| where Title in (RuleNames) or tostring(RelatedAnalyticRuleIds) has_any (RuleIds)\r\n| extend LabelText = tostring(Labels)\r\n| project CreatedTime, IncidentNumber, Title, Severity, Status, Classification,\r\n          AssignedTo = tostring(Owner.assignedTo),\r\n          AgentDisposition = extract(@\"soc-agent:(page|queue|auto_close|pending)\", 1, LabelText), IncidentUrl\r\n| order by CreatedTime desc\r\n| take 250",
               "size": 0,
               "title": "Incidents created by these rules",
               "noDataMessage": "No incidents from these rules in the time range.",

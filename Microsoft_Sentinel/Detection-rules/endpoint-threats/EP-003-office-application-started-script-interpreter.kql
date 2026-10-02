@@ -6,8 +6,8 @@
 // Sub-techniques: T1204.002, T1566.001
 // Tables: DeviceProcessEvents
 // Frequency: PT1H
-// Period: PT1H
-// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine); FileHash(Algorithm=HashAlgorithm, Value=SHA256)
+// Period: PT2H
+// Entities: Host(FullName=DeviceName); Account(Name=AccountName, NTDomain=AccountDomain); Process(CommandLine=ProcessCommandLine)
 // Custom details: OfficeApplication, FileName, Executions
 // Description: Word, Excel, PowerPoint, Outlook or another Office program started PowerShell, a script
 //   host or a Windows tool that can download and run code. A document does not need to do that; a
@@ -21,15 +21,16 @@
 // References: https://learn.microsoft.com/defender-endpoint/attack-surface-reduction-rules-reference
 let ExcludedCommandLines = dynamic([]);
 DeviceProcessEvents
-| where TimeGenerated > ago(1h)
+| where TimeGenerated > ago(2h)
+// Events are chosen by when they reached the workspace, so a late one is still read exactly once.
+| where ingestion_time() > ago(1h)
 | where InitiatingProcessFileName in~ ("winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe", "onenote.exe",
                                        "mspub.exe", "msaccess.exe", "visio.exe")
 | where FileName in~ ("powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe",
                       "rundll32.exe", "regsvr32.exe", "certutil.exe", "bitsadmin.exe", "msbuild.exe")
 | where ProcessCommandLine !in~ (ExcludedCommandLines)
 | summarize Executions = count(),
-            arg_min(TimeGenerated, AccountName, AccountDomain, FolderPath, SHA256, InitiatingProcessCommandLine, ReportId)
+            arg_min(TimeGenerated, AccountName, AccountDomain, FolderPath, InitiatingProcessCommandLine, ReportId)
             by DeviceName, DeviceId, OfficeApplication = InitiatingProcessFileName, FileName, ProcessCommandLine
 | project TimeGenerated, DeviceName, DeviceId, AccountName, AccountDomain, OfficeApplication, FileName,
-          ProcessCommandLine, Executions, SHA256, HashAlgorithm = "SHA256",
-          OfficeCommandLine = InitiatingProcessCommandLine, ReportId
+          ProcessCommandLine, Executions, OfficeCommandLine = InitiatingProcessCommandLine, ReportId
