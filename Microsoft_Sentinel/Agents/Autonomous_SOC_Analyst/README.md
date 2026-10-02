@@ -138,10 +138,12 @@ docker compose up --build        # -> http://localhost:8080
 Useful CLI options: `python -m soc_agent demo -s ransomware_workstation --report` prints the
 full IR report; `--no-latency` skips the simulated API latency.
 
-**Optional: Claude writes the reports.** Put an Anthropic API key in `.env`
+**Optional: Claude (or another AI of your choice like Ollama, Gem, or Copilot) writes the reports.** Put an Anthropic API key in `.env`
 (`ANTHROPIC_API_KEY=...`). The executive summary, attack narrative and next steps are then
 written by Claude; the verdict, evidence tables and actions are still rendered from facts.
 Without a key, a template report is used. Both modes support this.
+
+⚠️ Security Note: It is highly recommended to configure your chosen LLM with least-privilege access. This system includes built-in safeguards and a killswitch to ensure the model does not overstep its intended boundaries.
 
 ---
 
@@ -260,7 +262,7 @@ python -m soc_agent check
 ```
 
 `check` validates the config and policy, then probes every API with your credentials (token,
-Sentinel, Log Analytics, advanced hunting, Defender, each TI feed, Claude) and tells you exactly
+Sentinel, Log Analytics, advanced hunting, Defender, each TI feed, Claude, Ollama, Copilot) and tells you exactly
 which permission or setting is missing.
 
 ### 5.6 Start safely: recommend-only
@@ -417,6 +419,7 @@ Pass `X-SOC-User: <name>` (the dashboard's name field) so approvals are attribut
   and tested. Claude only writes prose, receives the facts as data explicitly marked untrusted,
   has no tools, and the actions table is always rendered from the incident record, so a prompt
   injection in a command line or email subject cannot trigger or misreport an action.
+⚠️ Security Note: It is highly recommended to configure your chosen LLM with least-privilege access. This system includes built-in safeguards and a killswitch to ensure the model does not overstep its intended boundaries.
 * **Guardrails before autonomy**: protected hosts, tier-0 accounts, admin roles, confidence
   threshold, per-hour rate limits, a global kill switch, internal-network and allowlist
   protection, automatic block expiry, one-click rollback, full audit log.
